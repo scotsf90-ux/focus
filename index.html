@@ -1393,6 +1393,17 @@
       Used only on-device to fetch weather. Coordinates never leave your browser except to <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> for the forecast.
     </div>
 
+    <h3>Your data <span class="small">(history · intentions · reflections · contacts)</span></h3>
+    <div class="small" style="color: var(--muted); margin: 0 0 8px; line-height:1.4;">
+      Everything is saved in this browser only. Export to back it up or move it to another device.
+    </div>
+    <div class="row" style="gap: 6px;">
+      <button id="exportBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Export JSON</button>
+      <button id="importBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Import JSON</button>
+      <input type="file" id="importInput" accept="application/json,.json" hidden />
+    </div>
+    <div id="dataStatus" class="small" style="color: var(--muted); margin-top: 8px; min-height: 1em;"></div>
+
     <div class="actions" style="justify-content:flex-end; margin-top:18px;">
       <button id="settingsDone" class="primary">Done</button>
     </div>
@@ -2139,6 +2150,70 @@
     try { await Notification.requestPermission(); } catch(_) {}
     refreshNotifStatus();
   };
+
+  // --- export / import data (JSON file, single source of truth) ---
+  function setDataStatus(text, kind) {
+    const el = $('dataStatus');
+    if (!el) return;
+    const colors = { ok: 'var(--accent-2)', err: 'var(--warn)', muted: 'var(--muted)' };
+    el.style.color = colors[kind] || colors.muted;
+    el.textContent = text;
+    if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 6000);
+  }
+  function exportData() {
+    try {
+      const raw = localStorage.getItem('onething.v2') || '{}';
+      const data = JSON.parse(raw);
+      const payload = {
+        app: 'one-thing',
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        data
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'one-thing-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setDataStatus('✓ Exported. Saved to your downloads.', 'ok');
+    } catch (e) {
+      setDataStatus('✕ Export failed.', 'err');
+    }
+  }
+  function importData(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      let parsed;
+      try { parsed = JSON.parse(e.target.result); }
+      catch (_) { setDataStatus('✕ That file isn\'t valid JSON.', 'err'); return; }
+      if (!parsed || parsed.app !== 'one-thing' || typeof parsed.data !== 'object') {
+        setDataStatus('✕ Not a One Thing export.', 'err');
+        return;
+      }
+      const ok = window.confirm('Replace your current One Thing data with this file? This cannot be undone.');
+      if (!ok) { setDataStatus('Import cancelled.', 'muted'); return; }
+      try {
+        localStorage.setItem('onething.v2', JSON.stringify(parsed.data));
+        setDataStatus('✓ Imported. Reloading…', 'ok');
+        setTimeout(() => window.location.reload(), 600);
+      } catch (_) {
+        setDataStatus('✕ Could not save — storage full?', 'err');
+      }
+    };
+    reader.onerror = () => setDataStatus('✕ Could not read file.', 'err');
+    reader.readAsText(file);
+  }
+  if ($('exportBtn')) $('exportBtn').onclick = exportData;
+  if ($('importBtn')) $('importBtn').onclick = () => $('importInput').click();
+  if ($('importInput')) $('importInput').addEventListener('change', e => {
+    importData(e.target.files && e.target.files[0]);
+    e.target.value = ''; // reset so same file can be re-imported if needed
+  });
 
   // --- geolocation opt-in (for weather-aware backgrounds) ---
   function refreshGeoStatus() {
