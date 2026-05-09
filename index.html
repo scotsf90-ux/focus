@@ -2466,18 +2466,34 @@
     // base ground hint
     parts.push('<ellipse cx="50" cy="138" rx="28" ry="2" fill="rgba(0,0,0,0.25)" />');
 
-    // FALLEN LEAVES — one per brain-dump entry. Thoughts you've set down.
-    // Uses its own seed so adding/removing dumps doesn't reshuffle the tree.
+    // BRAIN-DUMP MARKERS — one per parking lot entry. Thoughts you've set down.
+    // Aesthetic adapts to tree state: at seedling, small seed-dots cluster around
+    // the sprout's base; once the tree has grown, they become fallen leaves
+    // spread across the ground (stratified across x so they don't pile up).
     const dumps = (state.parkList || []).length;
     const fallen = Math.min(12, dumps);
     if (fallen > 0) {
       let fseed = 41;
       const frnd = () => { fseed = (fseed * 1103515245 + 12345) & 0x7fffffff; return (fseed % 1000) / 1000; };
-      for (let i = 0; i < fallen; i++) {
-        const fx = 22 + frnd() * 56;
-        const fy = 134 + frnd() * 4.5;
-        const fr = 1.0 + frnd() * 0.6;
-        parts.push(`<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${fr.toFixed(2)}" fill="${leafColor}" opacity="${(0.32 + frnd() * 0.25).toFixed(2)}" />`);
+      if (totalBlocks === 0) {
+        // seedling: small seeds in a soft halo around the base
+        for (let i = 0; i < fallen; i++) {
+          const angle = (i / Math.max(fallen, 6)) * Math.PI * 2 + frnd() * 0.4;
+          const ringR = 4.5 + frnd() * 4.5;
+          const fx = 50 + Math.cos(angle) * ringR;
+          const fy = 137 + Math.sin(angle) * ringR * 0.32;
+          parts.push(`<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${(0.7 + frnd() * 0.3).toFixed(2)}" fill="${leafColor}" opacity="${(0.4 + frnd() * 0.2).toFixed(2)}" />`);
+        }
+      } else {
+        // grown tree: stratified across x range so first leaves don't clump
+        for (let i = 0; i < fallen; i++) {
+          const slot = (i + 0.5) / fallen;            // 0..1 evenly across slots
+          const jitter = (frnd() - 0.5) * (56 / fallen) * 0.6;
+          const fx = 22 + slot * 56 + jitter;
+          const fy = 134 + frnd() * 4.5;
+          const fr = 1.0 + frnd() * 0.6;
+          parts.push(`<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${fr.toFixed(2)}" fill="${leafColor}" opacity="${(0.32 + frnd() * 0.25).toFixed(2)}" />`);
+        }
       }
     }
 
