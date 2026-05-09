@@ -671,6 +671,73 @@
   /* simple checkbox styling */
   input[type=checkbox] { accent-color: var(--accent); }
 
+  /* onboarding tour — bottom-anchored modal + target highlight */
+  .tour-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(8,10,14,0.45);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 16px max(40px, env(safe-area-inset-bottom, 0));
+    animation: fadeInUp .3s ease both;
+  }
+  .tour-card {
+    background: var(--panel);
+    border: 1px solid rgba(116,224,164,0.5);
+    border-radius: 14px;
+    padding: 18px 20px;
+    max-width: 440px;
+    width: 100%;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 4px rgba(116,224,164,0.08);
+  }
+  .tour-card h3 {
+    margin: 0 0 6px;
+    color: var(--accent-2);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    font-weight: 600;
+  }
+  .tour-card p {
+    margin: 0 0 14px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .tour-card .actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .tour-dots { display: flex; gap: 5px; }
+  .tour-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--line);
+    transition: background .25s ease, transform .25s ease;
+  }
+  .tour-dot.active { background: var(--accent-2); transform: scale(1.25); }
+  .tour-buttons { display: flex; gap: 6px; }
+  .tour-buttons button { font-size: 13px; padding: 7px 14px; }
+
+  /* highlight ring on the active step's target */
+  .tour-highlight {
+    position: relative;
+    z-index: 61;
+    outline: 2px solid rgba(116,224,164,0.7) !important;
+    outline-offset: 6px;
+    border-radius: 12px;
+    box-shadow: 0 0 0 8px rgba(116,224,164,0.12), 0 0 30px rgba(116,224,164,0.25) !important;
+    transition: box-shadow .3s ease, outline-offset .3s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tour-overlay { animation: none !important; }
+    .tour-highlight { transition: none !important; }
+  }
+
   /* ambient OFF: solid bg, no animation, no overlay, no tree */
   body.ambient-off {
     background: var(--bg) !important;
@@ -1393,6 +1460,11 @@
       Used only on-device to fetch weather. Coordinates never leave your browser except to <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> for the forecast.
     </div>
 
+    <h3>Help</h3>
+    <div class="row">
+      <button id="replayTourBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Replay quick tour</button>
+    </div>
+
     <h3>Your data <span class="small">(history · intentions · reflections · contacts)</span></h3>
     <div class="small" style="color: var(--muted); margin: 0 0 8px; line-height:1.4;">
       Everything is saved in this browser only. Export to back it up or move it to another device.
@@ -1458,6 +1530,7 @@
   // ambient sound doesn't auto-resume — browsers block autoplay; user must click
   state.ambient.type = 'off';
   state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
+  state.onboarded ??= false;
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
   state.alarmLastFiredAt ??= null;
   state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
@@ -3095,6 +3168,100 @@
   }
   updateTreeMood();
   setInterval(updateTreeMood, 5 * 60 * 1000);
+
+  // --- onboarding tour (4 steps, first-time only, replayable from settings) ---
+  const tourSteps = [
+    {
+      target: '#taskInput',
+      title: 'One thing at a time',
+      body: "Type what you're working on. Just one thing — that's the whole idea."
+    },
+    {
+      target: '.timer-row',
+      title: 'Start a focus block',
+      body: 'Pick a length, press Start. "Done early" still counts.'
+    },
+    {
+      target: '#parkInput',
+      title: 'Brain dump',
+      body: "Stray thought? Type it and press Enter. It'll wait here so you can keep working."
+    },
+    {
+      target: '#treeWrap',
+      title: 'Your tree',
+      body: 'Grows as you focus. Branches with blocks, fruit with reflections. Tap it sometime.'
+    }
+  ];
+  let _tourIndex = 0;
+
+  function buildTourElement() {
+    if (document.getElementById('tour')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'tour';
+    overlay.className = 'tour-overlay';
+    overlay.innerHTML = `
+      <div class="tour-card" role="dialog" aria-labelledby="tourTitle" aria-describedby="tourBody">
+        <h3 id="tourTitle"></h3>
+        <p id="tourBody"></p>
+        <div class="actions">
+          <div class="tour-dots" id="tourDots"></div>
+          <div class="tour-buttons">
+            <button class="ghost" id="tourSkip">Skip</button>
+            <button class="primary" id="tourNext">Next</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    document.getElementById('tourSkip').onclick = endTour;
+    document.getElementById('tourNext').onclick = nextTourStep;
+  }
+  function showTourStep() {
+    document.querySelectorAll('.tour-highlight').forEach(el => el.classList.remove('tour-highlight'));
+    const step = tourSteps[_tourIndex];
+    if (!step) { endTour(); return; }
+    const target = document.querySelector(step.target);
+    if (target) target.classList.add('tour-highlight');
+    document.getElementById('tourTitle').textContent = step.title;
+    document.getElementById('tourBody').textContent = step.body;
+    document.getElementById('tourNext').textContent = _tourIndex === tourSteps.length - 1 ? "Got it" : 'Next';
+    const dots = document.getElementById('tourDots');
+    dots.innerHTML = '';
+    tourSteps.forEach((_, i) => {
+      const d = document.createElement('div');
+      d.className = 'tour-dot' + (i === _tourIndex ? ' active' : '');
+      dots.appendChild(d);
+    });
+  }
+  function nextTourStep() {
+    _tourIndex++;
+    if (_tourIndex >= tourSteps.length) endTour();
+    else showTourStep();
+  }
+  function endTour() {
+    document.querySelectorAll('.tour-highlight').forEach(el => el.classList.remove('tour-highlight'));
+    const tour = document.getElementById('tour');
+    if (tour) tour.remove();
+    state.onboarded = true;
+    save();
+  }
+  function startTour() {
+    _tourIndex = 0;
+    buildTourElement();
+    showTourStep();
+  }
+  // first-time only — defer to let entrance animations settle
+  if (!state.onboarded) {
+    setTimeout(startTour, 1100);
+  }
+  // replay button in settings
+  if ($('replayTourBtn')) {
+    $('replayTourBtn').onclick = () => {
+      // close settings first so the tour can highlight underlying elements
+      $('settingsOverlay').classList.remove('show');
+      setTimeout(startTour, 350);
+    };
+  }
 
   // --- pointer parallax (subtle, desktop only) ---
   // Hill, grass, and weather overlay shift slightly with mouse position so the
