@@ -987,8 +987,8 @@
   }
   body.ambient-off .fireflies { display: none; }
 
-  /* ambient tree (grows with consistency) */
-  .tree {
+  /* ambient tree (grows with consistency) — wrapper holds seasonal filter, inner SVG holds time-of-day filter */
+  .tree-wrap {
     position: fixed;
     right: 8px;
     bottom: 8px;
@@ -996,13 +996,26 @@
     height: 196px;
     pointer-events: none;
     z-index: -1;
+    transition: filter 4s ease;
+  }
+  .tree-wrap.spring { filter: hue-rotate(8deg) saturate(1.05) brightness(1.03); }
+  .tree-wrap.summer { /* default — full saturation */ }
+  .tree-wrap.autumn { filter: hue-rotate(-25deg) saturate(1.2) brightness(0.98); }
+  .tree-wrap.winter { filter: saturate(0.6) brightness(0.85); }
+  .tree {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
     opacity: 0.78;
     filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35));
     transform-origin: 50% 100%;
     transition: filter 2.5s ease, opacity 2s ease;
   }
   @media (max-width: 600px) {
-    .tree { width: 92px; height: 130px; right: 4px; bottom: max(4px, env(safe-area-inset-bottom, 4px)); opacity: 0.65; }
+    .tree-wrap { width: 92px; height: 130px; right: 4px; bottom: max(4px, env(safe-area-inset-bottom, 4px)); }
+    .tree { opacity: 0.65; }
   }
   /* time/weather mood filters layered onto the base drop-shadow */
   .tree.night {
@@ -1126,7 +1139,9 @@
 <div class="grain" aria-hidden="true"></div>
 <div id="butterflies" class="butterflies" aria-hidden="true"></div>
 <div id="fireflies" class="fireflies" aria-hidden="true"></div>
-<svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+<div id="treeWrap" class="tree-wrap" aria-hidden="true">
+  <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+</div>
 <div class="app">
   <header>
     <div class="brand-block">
@@ -2529,6 +2544,7 @@
   renderHill();
   renderFireflies();
   renderButterflies();
+  applySeason();
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
@@ -2818,6 +2834,21 @@
   }
   updateSky();
   setInterval(updateSky, 5 * 60 * 1000); // re-tint every 5 minutes
+
+  // --- seasonal tree tint (spring/summer/autumn/winter via CSS class on wrapper) ---
+  function getSeason() {
+    const m = new Date().getMonth(); // 0-11
+    if (m >= 2 && m <= 4)  return 'spring';
+    if (m >= 5 && m <= 7)  return 'summer';
+    if (m >= 8 && m <= 10) return 'autumn';
+    return 'winter';
+  }
+  function applySeason() {
+    const wrap = document.getElementById('treeWrap');
+    if (!wrap) return;
+    wrap.classList.remove('spring','summer','autumn','winter');
+    wrap.classList.add(getSeason());
+  }
 
   // --- tree mood: sways with cloudCover, tints/silhouettes by time ---
   function updateTreeMood() {
