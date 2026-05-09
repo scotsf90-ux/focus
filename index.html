@@ -876,6 +876,16 @@
       <button id="notifEnableBtn" class="ghost" style="font-size:13px; padding:6px 10px;">Enable</button>
     </div>
 
+    <h3>Location <span class="small">(for weather-aware backgrounds)</span></h3>
+    <label><input type="checkbox" id="geoEnabled" /> Use my location</label>
+    <div class="row" style="margin-top:4px;">
+      <span class="small">Status:</span>
+      <span id="geoStatus" class="small"><b style="color: var(--muted);">not granted</b></span>
+    </div>
+    <div class="small" style="color: var(--muted); margin-top:6px; line-height:1.4;">
+      Used only on-device to fetch weather. Coordinates never leave your browser except to <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> for the forecast.
+    </div>
+
     <div class="actions" style="justify-content:flex-end; margin-top:18px;">
       <button id="settingsDone" class="primary">Done</button>
     </div>
@@ -928,6 +938,7 @@
   state.ambient ??= { type: 'off', volume: 0.08 };
   // ambient doesn't auto-resume — browsers block autoplay; user must click
   state.ambient.type = 'off';
+  state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
   state.alarmLastFiredAt ??= null;
   state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
 
@@ -1530,6 +1541,7 @@
     $('cutoffTime').value = state.cutoff.time || '17:30';
     renderContactsList();
     refreshNotifStatus();
+    refreshGeoStatus();
     $('settingsOverlay').classList.add('show');
   }
   function closeSettings() {
@@ -1603,6 +1615,65 @@
     try { await Notification.requestPermission(); } catch(_) {}
     refreshNotifStatus();
   };
+
+  // --- geolocation opt-in (for weather-aware backgrounds) ---
+  function refreshGeoStatus() {
+    const el = $('geoStatus');
+    const cb = $('geoEnabled');
+    if (!el || !cb) return;
+    cb.checked = !!state.geo.granted;
+    if (state.geo.granted && state.geo.lat != null) {
+      const lat = state.geo.lat.toFixed(1);
+      const lng = state.geo.lng.toFixed(1);
+      el.innerHTML = `<b style="color: var(--accent-2);">✓ Granted</b> <span style="color: var(--muted);">(${lat}, ${lng})</span>`;
+    } else if (state.geo.error === 1 /* PERMISSION_DENIED */) {
+      el.innerHTML = '<b style="color: var(--warn);">Denied</b> <span style="color: var(--muted);">— re-enable in browser settings</span>';
+    } else if (state.geo.error) {
+      el.innerHTML = '<b style="color: var(--warn);">Error</b> <span style="color: var(--muted);">— try again</span>';
+    } else {
+      el.innerHTML = '<b style="color: var(--muted);">not granted</b>';
+    }
+  }
+  function requestGeo() {
+    if (!navigator.geolocation) {
+      state.geo = { ...state.geo, granted: false, error: 'unsupported' };
+      save(); refreshGeoStatus();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        state.geo = {
+          granted: true,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          lastFetch: Date.now(),
+          error: null
+        };
+        save(); refreshGeoStatus();
+      },
+      err => {
+        state.geo = {
+          granted: false,
+          lat: state.geo.lat,
+          lng: state.geo.lng,
+          lastFetch: state.geo.lastFetch,
+          error: err.code || 'error'
+        };
+        save(); refreshGeoStatus();
+      },
+      { timeout: 10000, maximumAge: 24 * 3600 * 1000 }
+    );
+  }
+  if ($('geoEnabled')) {
+    $('geoEnabled').addEventListener('change', e => {
+      if (e.target.checked) {
+        requestGeo();
+      } else {
+        state.geo = { ...state.geo, granted: false };
+        save(); refreshGeoStatus();
+      }
+    });
+  }
 
   // --- weekly look-back ---
   function openWeek() {
