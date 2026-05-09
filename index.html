@@ -906,6 +906,48 @@
     .weather-overlay .star { animation: none !important; opacity: 0.2 !important; }
   }
 
+  /* butterflies — appear during daytime, drift across the screen */
+  .butterflies {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 70vh;
+    pointer-events: none;
+    z-index: -1;
+    overflow: hidden;
+  }
+  .butterfly {
+    position: absolute;
+    top: var(--y, 30vh);
+    left: -40px;
+    width: 18px;
+    height: 14px;
+    opacity: 0;
+    animation: butterflyFly var(--dur, 50s) linear infinite both;
+    animation-delay: var(--delay, 0s);
+    will-change: transform, opacity;
+  }
+  @keyframes butterflyFly {
+    0%   { transform: translate3d(0, 0, 0);                opacity: 0; }
+    6%   { opacity: 0.5; }
+    20%  { transform: translate3d(28vw, -2.4vh, 0);        opacity: 0.5; }
+    40%  { transform: translate3d(50vw, 1.6vh, 0);         opacity: 0.5; }
+    60%  { transform: translate3d(72vw, -1.8vh, 0);        opacity: 0.5; }
+    80%  { transform: translate3d(92vw, 2.2vh, 0);         opacity: 0.5; }
+    95%  { opacity: 0; }
+    100% { transform: translate3d(110vw, 0, 0);            opacity: 0; }
+  }
+  .butterfly svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .butterfly .wing {
+    transform-origin: 9px 7px;
+    animation: butterflyWing 0.42s ease-in-out infinite alternate;
+  }
+  @keyframes butterflyWing {
+    from { transform: scaleX(1.0); }
+    to   { transform: scaleX(0.55); }
+  }
+  @media (prefers-reduced-motion: reduce) { .butterflies { display: none; } }
+  body.ambient-off .butterflies { display: none; }
+
   /* fireflies — appear at night around the tree zone */
   .fireflies {
     position: fixed;
@@ -1082,6 +1124,7 @@
   <div class="grass-band"></div>
 </div>
 <div class="grain" aria-hidden="true"></div>
+<div id="butterflies" class="butterflies" aria-hidden="true"></div>
 <div id="fireflies" class="fireflies" aria-hidden="true"></div>
 <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div class="app">
@@ -2138,6 +2181,7 @@
       renderWeatherChip();
       renderWeatherOverlay();
       renderFireflies();
+      renderButterflies();
       updateTreeMood();
     } catch (e) {
       // silent — keep stale data visible
@@ -2484,10 +2528,47 @@
   renderTree();
   renderHill();
   renderFireflies();
+  renderButterflies();
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
   applyAmbientLayers();
+
+  // --- butterflies: drift across during daytime, with slow wing flaps ---
+  function renderButterflies() {
+    const container = document.getElementById('butterflies');
+    if (!container) return;
+    container.innerHTML = '';
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const w = state.weather || {};
+    const h = new Date().getHours();
+    const isDay = w.isDay === 1 || (w.isDay == null && h >= 7 && h < 19);
+    if (!isDay) return;
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
+    const count = isMobile ? 1 : 2;
+    let s = 113;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
+    const wingColor = '#74e0a4';
+    for (let i = 0; i < count; i++) {
+      const b = document.createElement('div');
+      b.className = 'butterfly';
+      b.style.setProperty('--y', (12 + rnd() * 38).toFixed(1) + 'vh');
+      b.style.setProperty('--dur', (40 + rnd() * 25).toFixed(1) + 's');
+      // negative delay distributes them across their cycle so they don't all enter together
+      b.style.setProperty('--delay', (-rnd() * 60).toFixed(1) + 's');
+      b.innerHTML = `
+        <svg viewBox="0 0 18 14" xmlns="http://www.w3.org/2000/svg">
+          <g class="wing">
+            <ellipse cx="5"  cy="7" rx="4.2" ry="3.4" fill="${wingColor}" opacity="0.55"/>
+            <ellipse cx="13" cy="7" rx="4.2" ry="3.4" fill="${wingColor}" opacity="0.55"/>
+            <ellipse cx="5"  cy="9" rx="2.8" ry="2.2" fill="${wingColor}" opacity="0.4"/>
+            <ellipse cx="13" cy="9" rx="2.8" ry="2.2" fill="${wingColor}" opacity="0.4"/>
+          </g>
+          <line x1="9" y1="3.5" x2="9" y2="10.5" stroke="rgba(40,60,50,0.7)" stroke-width="0.8" stroke-linecap="round"/>
+        </svg>`;
+      container.appendChild(b);
+    }
+  }
 
   // --- fireflies: appear at night, drift slowly around the tree zone ---
   function renderFireflies() {
@@ -2800,6 +2881,7 @@
       if (typeof updateLastStood === 'function') updateLastStood();
       if (typeof renderIntention === 'function') renderIntention();
       if (typeof renderFireflies === 'function') renderFireflies();
+      if (typeof renderButterflies === 'function') renderButterflies();
       if (typeof fetchWeather === 'function') fetchWeather(false);
     } catch (_) {}
   });
