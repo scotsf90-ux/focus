@@ -30,9 +30,24 @@
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-    background: radial-gradient(1200px 600px at 70% -10%, #1c2230 0%, var(--bg) 60%);
     color: var(--text);
     -webkit-font-smoothing: antialiased;
+    /* Layered: warm spotlight overlay over time-of-day sky */
+    background:
+      radial-gradient(1200px 600px at 70% -10%, rgba(28,34,48,0.55) 0%, rgba(15,17,21,0) 60%),
+      linear-gradient(to bottom, var(--sky-top, #0f1115) 0%, var(--sky-mid, #161a23) 50%, var(--sky-bot, #1c2230) 100%);
+    background-attachment: fixed;
+    transition: background 4s ease;
+  }
+  /* Slow drift on the spotlight so the page feels alive */
+  @keyframes ambientDrift {
+    0%   { background-position: 0% 0%, 0% 0%; }
+    50%  { background-position: 8% 4%, 0% 0%; }
+    100% { background-position: 0% 0%, 0% 0%; }
+  }
+  body { animation: ambientDrift 60s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    body { animation: none !important; transition: none !important; }
   }
 
   /* Calm staggered entrance — ADHD-aware, no pulse, no flash */
@@ -1787,6 +1802,51 @@
   cutoffTick();
   updateGreeting();
   renderIntention();
+
+  // --- time-of-day sky gradient (calm, drives body bg via CSS vars) ---
+  // Each entry: hour, top color, mid color, bottom color. Linearly interpolated.
+  const skyMoods = [
+    { hr:  0, top:'#0a0c14', mid:'#0d1018', bot:'#10131c' }, // deep night
+    { hr:  4, top:'#0f1322', mid:'#161a2c', bot:'#1c2038' }, // late night
+    { hr:  5, top:'#1d1c36', mid:'#2c2440', bot:'#3d2c48' }, // pre-dawn
+    { hr:  6, top:'#3a2a55', mid:'#5a3060', bot:'#82486a' }, // dawn
+    { hr:  7, top:'#4f3866', mid:'#a96878', bot:'#d68868' }, // sunrise
+    { hr:  9, top:'#3a567c', mid:'#6e8aaa', bot:'#a8b8c8' }, // morning
+    { hr: 12, top:'#2a4a72', mid:'#4d78a0', bot:'#6e9ec0' }, // midday
+    { hr: 15, top:'#2e466e', mid:'#6e7898', bot:'#9d8a78' }, // afternoon
+    { hr: 17, top:'#3a3a64', mid:'#7a4a64', bot:'#c46050' }, // golden
+    { hr: 19, top:'#28204a', mid:'#4a2848', bot:'#5a2030' }, // sunset
+    { hr: 20, top:'#1a1830', mid:'#251c34', bot:'#28202a' }, // dusk
+    { hr: 22, top:'#0e1020', mid:'#11141e', bot:'#13161e' }, // evening
+    { hr: 24, top:'#0a0c14', mid:'#0d1018', bot:'#10131c' }  // back to deep night
+  ];
+  function lerpHex(a, b, t) {
+    const ah = parseInt(a.slice(1), 16), bh = parseInt(b.slice(1), 16);
+    const ar = (ah >> 16) & 255, ag = (ah >> 8) & 255, ab = ah & 255;
+    const br = (bh >> 16) & 255, bg = (bh >> 8) & 255, bb = bh & 255;
+    const r = Math.round(ar + (br - ar) * t);
+    const g = Math.round(ag + (bg - ag) * t);
+    const bl = Math.round(ab + (bb - ab) * t);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+  }
+  function updateSky() {
+    const now = new Date();
+    const h = now.getHours() + now.getMinutes() / 60;
+    let lo = skyMoods[0], hi = skyMoods[skyMoods.length - 1];
+    for (let i = 0; i < skyMoods.length - 1; i++) {
+      if (h >= skyMoods[i].hr && h < skyMoods[i + 1].hr) {
+        lo = skyMoods[i]; hi = skyMoods[i + 1]; break;
+      }
+    }
+    const span = hi.hr - lo.hr;
+    const t = span > 0 ? (h - lo.hr) / span : 0;
+    const root = document.documentElement;
+    root.style.setProperty('--sky-top', lerpHex(lo.top, hi.top, t));
+    root.style.setProperty('--sky-mid', lerpHex(lo.mid, hi.mid, t));
+    root.style.setProperty('--sky-bot', lerpHex(lo.bot, hi.bot, t));
+  }
+  updateSky();
+  setInterval(updateSky, 5 * 60 * 1000); // re-tint every 5 minutes
 
   // --- service worker registration (PWA + offline support) ---
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
