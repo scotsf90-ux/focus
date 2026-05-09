@@ -733,11 +733,38 @@
     z-index: -1;
     opacity: 0.78;
     filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35));
+    transform-origin: 50% 100%;
+    transition: filter 2.5s ease, opacity 2s ease;
   }
   @media (max-width: 600px) {
     .tree { width: 92px; height: 130px; right: 4px; bottom: max(4px, env(safe-area-inset-bottom, 4px)); opacity: 0.65; }
   }
-  @media (prefers-reduced-motion: reduce) { .tree { opacity: 0.5; } }
+  /* time/weather mood filters layered onto the base drop-shadow */
+  .tree.night {
+    filter: brightness(0.5) saturate(0.55) drop-shadow(0 5px 14px rgba(0,0,0,0.55));
+    opacity: 0.62;
+  }
+  .tree.golden {
+    filter: brightness(1.06) saturate(1.12) hue-rotate(-6deg) drop-shadow(0 6px 14px rgba(255,140,80,0.18));
+  }
+  .tree.dawn {
+    filter: brightness(0.92) saturate(0.85) hue-rotate(-12deg) drop-shadow(0 4px 12px rgba(140,90,140,0.25));
+  }
+  /* gentle sway when cloudy/windy — short period for "breeze", longer for stillness */
+  @keyframes treeSway {
+    0%, 100% { transform: rotate(-0.4deg) translateX(0); }
+    50%      { transform: rotate(0.4deg) translateX(1px); }
+  }
+  @keyframes treeSwayBreezy {
+    0%, 100% { transform: rotate(-0.9deg) translateX(0); }
+    50%      { transform: rotate(0.9deg) translateX(2px); }
+  }
+  .tree.sway      { animation: treeSway 9s ease-in-out infinite; }
+  .tree.sway.windy { animation: treeSwayBreezy 5.5s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .tree { opacity: 0.5; animation: none !important; }
+    .tree.sway, .tree.sway.windy { animation: none !important; }
+  }
 
   /* streak counter delight pop on increment */
   @keyframes streakPop {
@@ -1820,6 +1847,7 @@
       save();
       renderWeatherChip();
       renderWeatherOverlay();
+      updateTreeMood();
     } catch (e) {
       // silent — keep stale data visible
       renderWeatherChip();
@@ -2277,6 +2305,34 @@
   }
   updateSky();
   setInterval(updateSky, 5 * 60 * 1000); // re-tint every 5 minutes
+
+  // --- tree mood: sways with cloudCover, tints/silhouettes by time ---
+  function updateTreeMood() {
+    const tree = document.getElementById('tree');
+    if (!tree) return;
+    tree.classList.remove('night', 'golden', 'dawn', 'sway', 'windy');
+
+    const w = state.weather || {};
+    const now = new Date();
+    const h = now.getHours() + now.getMinutes() / 60;
+
+    // Time-of-day mood: prefer weather's isDay flag if available, else hour-based fallback
+    const isNight = (w.isDay === 0) || (h < 5.5 || h >= 21);
+    const isDawn  = !isNight && h >= 5.5 && h < 7.5;
+    const isGolden = !isNight && h >= 17 && h < 20;
+
+    if (isNight)       tree.classList.add('night');
+    else if (isGolden) tree.classList.add('golden');
+    else if (isDawn)   tree.classList.add('dawn');
+
+    // Wind/sway: cloudCover drives sway intensity. No data → no sway.
+    if (w.cloudCover != null) {
+      if (w.cloudCover >= 35) tree.classList.add('sway');
+      if (w.cloudCover >= 70) tree.classList.add('windy');
+    }
+  }
+  updateTreeMood();
+  setInterval(updateTreeMood, 5 * 60 * 1000);
 
   // --- service worker registration (PWA + offline support) ---
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
