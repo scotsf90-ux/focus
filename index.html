@@ -644,6 +644,12 @@
   /* simple checkbox styling */
   input[type=checkbox] { accent-color: var(--accent); }
 
+  /* ambient OFF: solid bg, no animation, no overlay, no tree */
+  body.ambient-off {
+    background: var(--bg) !important;
+    animation: none !important;
+  }
+
   /* weather overlay — subtle particles tied to current weather */
   .weather-overlay {
     position: fixed;
@@ -968,6 +974,14 @@
     <button class="icon-btn close" data-close="settings" aria-label="Close settings">✕</button>
     <h2 id="settingsTitle">Settings</h2>
 
+    <h3>Ambient layer <span class="small">(sky · weather · tree)</span></h3>
+    <div id="ambientLayerRow" class="energy-row">
+      <button data-layer="off">off</button>
+      <button data-layer="sky">sky</button>
+      <button data-layer="weather">+ weather</button>
+      <button data-layer="all">+ tree</button>
+    </div>
+
     <h3>Outside alarm <span class="small">(fires regardless of timer)</span></h3>
     <label><input type="checkbox" id="alarmEnabled" /> Remind me to get up &amp; outside</label>
     <div class="row">
@@ -1053,8 +1067,9 @@
   state.contacts ??= [];
   state.alarm ??= { enabled: false, intervalMin: 90 };
   state.cutoff ??= { enabled: false, time: '17:30' };
-  state.ambient ??= { type: 'off', volume: 0.08 };
-  // ambient doesn't auto-resume — browsers block autoplay; user must click
+  state.ambient ??= { type: 'off', volume: 0.08, layers: 'all' };
+  state.ambient.layers ??= 'all'; // 'off' | 'sky' | 'weather' | 'all'
+  // ambient sound doesn't auto-resume — browsers block autoplay; user must click
   state.ambient.type = 'off';
   state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
@@ -2120,6 +2135,17 @@
 
   $('standBtn').onclick = () => { state.lastStoodAt = Date.now(); save(); updateLastStood(); };
 
+  // ambient layer pill group wiring
+  document.querySelectorAll('#ambientLayerRow button').forEach(b => {
+    b.classList.toggle('active', state.ambient.layers === b.dataset.layer);
+    b.onclick = () => {
+      state.ambient.layers = b.dataset.layer; save();
+      document.querySelectorAll('#ambientLayerRow button').forEach(x =>
+        x.classList.toggle('active', state.ambient.layers === x.dataset.layer));
+      applyAmbientLayers();
+    };
+  });
+
   // ambient sound wiring
   document.querySelectorAll('#ambientRow button').forEach(b => {
     b.classList.toggle('active', state.ambient.type === b.dataset.amb);
@@ -2165,6 +2191,20 @@
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
+  applyAmbientLayers();
+
+  // --- ambient layer toggle (off / sky / +weather / +tree=all) ---
+  function applyAmbientLayers() {
+    const layers = (state.ambient && state.ambient.layers) || 'all';
+    const showSky     = layers !== 'off';
+    const showWeather = layers === 'weather' || layers === 'all';
+    const showTree    = layers === 'all';
+    document.body.classList.toggle('ambient-off', !showSky);
+    const overlay = document.getElementById('weatherOverlay');
+    const tree = document.getElementById('tree');
+    if (overlay) overlay.style.display = showWeather ? '' : 'none';
+    if (tree) tree.style.display = showTree ? '' : 'none';
+  }
 
   // --- ambient tree (grows with consistency) ---
   // Trunk always present. Branches scale with total focus blocks. Leaves bloom
