@@ -994,9 +994,38 @@
     bottom: 8px;
     width: 140px;
     height: 196px;
-    pointer-events: none;
-    z-index: -1;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 1;
     transition: filter 4s ease;
+  }
+  /* shake animation when tapped */
+  @keyframes treeShake {
+    0%, 100% { transform: rotate(0deg); }
+    25%      { transform: rotate(-2deg); }
+    50%      { transform: rotate(1.5deg); }
+    75%      { transform: rotate(-1deg); }
+  }
+  .tree-wrap.shake .tree { animation: treeShake 0.7s ease-in-out; }
+  /* floating leaves released on tap */
+  .float-leaf {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent-2, #74e0a4);
+    pointer-events: none;
+    opacity: 0;
+    animation: leafFloat 1.9s cubic-bezier(.2,.7,.2,1) forwards;
+  }
+  @keyframes leafFloat {
+    0%   { transform: translate3d(0, 0, 0); opacity: 0; }
+    18%  { opacity: 0.85; }
+    100% { transform: translate3d(var(--dx, 0px), -90px, 0); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tree-wrap.shake .tree { animation: none !important; }
+    .float-leaf { animation-duration: 0.4s !important; }
   }
   .tree-wrap.spring { filter: hue-rotate(8deg) saturate(1.05) brightness(1.03); }
   .tree-wrap.summer { /* default — full saturation */ }
@@ -2575,6 +2604,7 @@
   renderButterflies();
   applySeason();
   applyStreakHalo();
+  setupTreeTap();
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
@@ -2864,6 +2894,53 @@
   }
   updateSky();
   setInterval(updateSky, 5 * 60 * 1000); // re-tint every 5 minutes
+
+  // --- tap-the-tree easter egg: shake + floating leaves + soft chime ---
+  function setupTreeTap() {
+    const wrap = $('treeWrap');
+    if (!wrap) return;
+    wrap.addEventListener('click', () => {
+      // shake the tree
+      wrap.classList.remove('shake');
+      void wrap.offsetWidth; // force reflow so animation re-fires
+      wrap.classList.add('shake');
+      setTimeout(() => wrap.classList.remove('shake'), 750);
+
+      // release 3-5 floating leaves
+      const rect = wrap.getBoundingClientRect();
+      const count = 3 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < count; i++) {
+        const leaf = document.createElement('div');
+        leaf.className = 'float-leaf';
+        const x = 25 + Math.random() * (rect.width - 50);
+        const y = 50 + Math.random() * 60;
+        leaf.style.left = x.toFixed(0) + 'px';
+        leaf.style.top = y.toFixed(0) + 'px';
+        leaf.style.setProperty('--dx', ((Math.random() - 0.5) * 36).toFixed(1) + 'px');
+        leaf.style.animationDelay = (Math.random() * 0.25).toFixed(2) + 's';
+        wrap.appendChild(leaf);
+        setTimeout(() => leaf.remove(), 2300);
+      }
+
+      // soft chime — only if user has ambient sound enabled (won't surprise them)
+      if (state.ambient && state.ambient.type !== 'off' && typeof ensureAudio === 'function') {
+        try {
+          const ctx = ensureAudio();
+          if (ctx.state === 'suspended') ctx.resume();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.value = 660 + Math.random() * 120;
+          g.gain.setValueAtTime(0.0001, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.035, ctx.currentTime + 0.04);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.1);
+          o.connect(g).connect(ctx.destination);
+          o.start();
+          o.stop(ctx.currentTime + 1.2);
+        } catch(_) {}
+      }
+    });
+  }
 
   // --- consecutive-day streak halo (7+ / 30+ / 100+) ---
   function computeConsecutiveDays() {
