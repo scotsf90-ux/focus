@@ -2292,6 +2292,21 @@
     const parts = [];
     // base ground hint
     parts.push('<ellipse cx="50" cy="138" rx="28" ry="2" fill="rgba(0,0,0,0.25)" />');
+
+    // SEEDLING — first focus block hasn't happened yet. Show a small sprout.
+    if (totalBlocks === 0) {
+      // tiny stem
+      parts.push(`<path d="M50 138 Q49 130 50 122" stroke="${trunkColor}" stroke-width="2" fill="none" stroke-linecap="round" />`);
+      // two cotyledon leaves curving outward
+      parts.push(`<path d="M50 124 Q44 120 40 124 Q44 126 50 124" fill="${leafColor}" opacity="0.85" />`);
+      parts.push(`<path d="M50 124 Q56 120 60 124 Q56 126 50 124" fill="${leafColor}" opacity="0.85" />`);
+      // little inner highlight on leaves so they look alive
+      parts.push(`<circle cx="44" cy="123.5" r="0.6" fill="rgba(255,255,255,0.4)" />`);
+      parts.push(`<circle cx="56" cy="123.5" r="0.6" fill="rgba(255,255,255,0.4)" />`);
+      svg.innerHTML = parts.join('');
+      return;
+    }
+
     // trunk: gentle S-curve from base up
     parts.push(`<path d="M50 138 Q47 110 50 80 Q53 50 50 18" stroke="${trunkColor}" stroke-width="3.2" fill="none" stroke-linecap="round" />`);
 
