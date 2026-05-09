@@ -687,6 +687,7 @@
         <span>·</span>
         <span>Last break: <b id="lastBreak">—</b></span>
       </div>
+      <button id="installBtn" class="icon-btn" title="Install app" aria-label="Install app" hidden>⬇</button>
       <button id="weekBtn" class="icon-btn" title="Weekly look-back" aria-label="Open weekly look-back">📊</button>
       <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Open settings">⚙</button>
     </div>
@@ -1793,6 +1794,33 @@
       navigator.serviceWorker.register('service-worker.js').catch(() => {});
     });
   }
+
+  // --- install button (Chrome / Android beforeinstallprompt) ---
+  let _deferredInstall = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _deferredInstall = e;
+    const btn = $('installBtn');
+    if (btn) btn.hidden = false;
+  });
+  const _installBtn = $('installBtn');
+  if (_installBtn) {
+    _installBtn.onclick = async () => {
+      if (!_deferredInstall) return;
+      _deferredInstall.prompt();
+      const { outcome } = await _deferredInstall.userChoice;
+      _deferredInstall = null;
+      _installBtn.hidden = true;
+    };
+  }
+  // hide if already installed (running in standalone)
+  if (window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true) {
+    if (_installBtn) _installBtn.hidden = true;
+  }
+  window.addEventListener('appinstalled', () => {
+    if (_installBtn) _installBtn.hidden = true;
+  });
 })();
 </script>
 </body>
