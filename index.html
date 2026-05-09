@@ -365,6 +365,9 @@
   ul.park-list li.entering {
     animation: parkSlideIn .28s cubic-bezier(.2,.7,.2,1) both;
   }
+  @media (prefers-reduced-motion: reduce) {
+    ul.park-list li.entering { animation: none !important; }
+  }
   .park-empty {
     margin-top: 14px;
     padding: 16px 14px;
@@ -1901,8 +1904,13 @@
       el.appendChild(d);
     };
 
+    // Halve particle counts on small/mobile viewports for smooth motion
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const scale = (n) => Math.max(2, Math.round(n * (reduceMotion ? 0.35 : isMobile ? 0.55 : 1)));
+
     if (w.bucket === 'rain' || w.bucket === 'thunder') {
-      const count = w.bucket === 'thunder' ? 38 : 28;
+      const count = scale(w.bucket === 'thunder' ? 38 : 28);
       for (let i = 0; i < count; i++) {
         make('rain-drop', {
           '--x': (rnd() * 100).toFixed(1) + 'vw',
@@ -1912,7 +1920,7 @@
       }
     }
     if (w.bucket === 'snow') {
-      const count = 26;
+      const count = scale(26);
       for (let i = 0; i < count; i++) {
         const size = (2 + rnd() * 2.5).toFixed(1);
         const d = document.createElement('div');
@@ -1929,7 +1937,7 @@
     // clouds when overcast/cloudy/fog OR cloudCover high
     const wantsClouds = w.bucket === 'cloudy' || w.bucket === 'fog' || (w.cloudCover != null && w.cloudCover > 55 && w.bucket !== 'rain' && w.bucket !== 'snow');
     if (wantsClouds) {
-      const count = w.bucket === 'fog' ? 5 : 4;
+      const count = scale(w.bucket === 'fog' ? 5 : 4);
       for (let i = 0; i < count; i++) {
         const d = document.createElement('div');
         d.className = 'cloud';
@@ -1944,7 +1952,7 @@
     }
     // stars at night, regardless of bucket
     if (w.isDay === 0) {
-      const count = 32;
+      const count = scale(32);
       for (let i = 0; i < count; i++) {
         make('star', {
           '--x': (rnd() * 100).toFixed(1) + 'vw',
@@ -2234,7 +2242,11 @@
     let seed = totalBlocks * 31 + reflections * 7 + Math.round(consistency * 100);
     const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed % 1000) / 1000; };
 
-    const branches = Math.min(15, Math.floor(totalBlocks / 2));
+    // Triangular growth — first block gives a branch, slows down at higher counts.
+    // T(n) = n(n+1)/2. branches = floor((-1 + sqrt(1+8x))/2). Caps at 15.
+    // 1→1, 3→2, 6→3, 10→4, 15→5, 21→6, 28→7, ..., 120→15
+    const triangular = totalBlocks > 0 ? Math.floor((-1 + Math.sqrt(1 + 8 * totalBlocks)) / 2) : 0;
+    const branches = Math.min(15, triangular);
     const leavesPerBranch = Math.round(consistency * 5);
     const fruits = Math.min(8, reflections);
 
