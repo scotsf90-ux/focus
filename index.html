@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>One Thing — focus tool</title>
+<meta name="description" content="A calm focus companion for ADHD desk-workers who love being outside and around people." />
+<meta name="theme-color" content="#0f1115" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="One Thing" />
 <style>
   :root {
     --bg: #0f1115;
@@ -61,7 +69,7 @@
   .app {
     max-width: 980px;
     margin: 0 auto;
-    padding: 28px 22px 80px;
+    padding: max(28px, env(safe-area-inset-top, 0)) max(22px, env(safe-area-inset-right, 0)) max(80px, calc(env(safe-area-inset-bottom, 0) + 60px)) max(22px, env(safe-area-inset-left, 0));
   }
   header {
     display: flex;
@@ -1778,6 +1786,13 @@
   cutoffTick();
   updateGreeting();
   renderIntention();
+
+  // --- service worker registration (PWA + offline support) ---
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    });
+  }
 })();
 </script>
 </body>
