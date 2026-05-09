@@ -653,6 +653,21 @@
     animation: none !important;
   }
 
+  /* ambient help panel */
+  .ambient-help {
+    margin-top: 8px;
+    padding: 12px 14px;
+    background: rgba(116,224,164,0.05);
+    border: 1px solid rgba(116,224,164,0.15);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .ambient-help p { margin: 0 0 8px; }
+  .ambient-help p:last-child { margin-bottom: 0; }
+  .ambient-help em { color: var(--accent); font-style: normal; font-weight: 600; }
+
   /* weather overlay — subtle particles tied to current weather */
   .weather-overlay {
     position: fixed;
@@ -977,12 +992,20 @@
     <button class="icon-btn close" data-close="settings" aria-label="Close settings">✕</button>
     <h2 id="settingsTitle">Settings</h2>
 
-    <h3>Ambient layer <span class="small">(sky · weather · tree)</span></h3>
+    <h3 style="display:flex; align-items:center; gap:8px;">
+      Ambient layer <span class="small">(sky · weather · tree)</span>
+      <button id="ambientHelpBtn" class="icon-btn" type="button" aria-label="How the ambient layer works" aria-expanded="false" style="width:24px; height:24px; font-size:13px; margin-left:4px;">?</button>
+    </h3>
     <div id="ambientLayerRow" class="energy-row">
       <button data-layer="off">off</button>
       <button data-layer="sky">sky</button>
       <button data-layer="weather">+ weather</button>
       <button data-layer="all">+ tree</button>
+    </div>
+    <div id="ambientHelp" class="ambient-help" hidden>
+      <p><b style="color: var(--accent-2);">Sky</b> — the background gradient shifts color through dawn, morning, midday, golden hour, evening, and night. Always on (no permission needed).</p>
+      <p><b style="color: var(--accent-2);">Weather</b> — if you allow location, real weather where you are: rain falls, snow drifts, clouds pass, stars come out at night. Updates every 30 min. Falls back gracefully if you go offline.</p>
+      <p><b style="color: var(--accent-2);">Tree</b> — grows from your habits. New branches sprout at <em>1, 3, 6, 10, 15, 21…</em> focus blocks (gets harder as the tree fills in, capped at 15). Leaves fill in based on how many of the last 7 days you showed up. A small fruit appears for each end-of-day reflection you save. The tree silhouettes at night and leans when it's blustery.</p>
     </div>
 
     <h3>Outside alarm <span class="small">(fires regardless of timer)</span></h3>
@@ -2142,6 +2165,17 @@
   });
 
   $('standBtn').onclick = () => { state.lastStoodAt = Date.now(); save(); updateLastStood(); };
+
+  // ambient help toggle
+  if ($('ambientHelpBtn')) {
+    $('ambientHelpBtn').onclick = () => {
+      const panel = $('ambientHelp');
+      const btn = $('ambientHelpBtn');
+      const isHidden = panel.hidden;
+      panel.hidden = !isHidden;
+      btn.setAttribute('aria-expanded', String(isHidden));
+    };
+  }
 
   // ambient layer pill group wiring
   document.querySelectorAll('#ambientLayerRow button').forEach(b => {
