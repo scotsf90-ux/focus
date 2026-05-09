@@ -866,6 +866,45 @@
     .weather-overlay .star { animation: none !important; opacity: 0.2 !important; }
   }
 
+  /* fireflies — appear at night around the tree zone */
+  .fireflies {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    width: 280px;
+    height: 280px;
+    pointer-events: none;
+    z-index: -1;
+    overflow: hidden;
+  }
+  @media (max-width: 600px) {
+    .fireflies { width: 200px; height: 200px; }
+  }
+  .firefly {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #ffe07a;
+    box-shadow: 0 0 8px 2px rgba(255, 224, 122, 0.45), 0 0 18px 6px rgba(255, 224, 122, 0.18);
+    opacity: 0;
+    animation: fireflyDrift var(--dur, 18s) ease-in-out infinite both;
+    animation-delay: var(--delay, 0s);
+    will-change: transform, opacity;
+  }
+  @keyframes fireflyDrift {
+    0%   { transform: translate3d(0, 0, 0);          opacity: 0.18; }
+    20%  { transform: translate3d(35px, -25px, 0);   opacity: 0.7; }
+    40%  { transform: translate3d(70px, -10px, 0);   opacity: 0.35; }
+    60%  { transform: translate3d(45px, -50px, 0);   opacity: 0.85; }
+    80%  { transform: translate3d(15px, -25px, 0);   opacity: 0.3; }
+    100% { transform: translate3d(0, 0, 0);          opacity: 0.18; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fireflies { display: none; }
+  }
+  body.ambient-off .fireflies { display: none; }
+
   /* ambient tree (grows with consistency) */
   .tree {
     position: fixed;
@@ -982,6 +1021,7 @@
   </svg>
   <div class="grass-band"></div>
 </div>
+<div id="fireflies" class="fireflies" aria-hidden="true"></div>
 <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div class="app">
   <header>
@@ -2036,6 +2076,7 @@
       save();
       renderWeatherChip();
       renderWeatherOverlay();
+      renderFireflies();
       updateTreeMood();
     } catch (e) {
       // silent — keep stale data visible
@@ -2381,10 +2422,37 @@
   renderIntention();
   renderTree();
   renderHill();
+  renderFireflies();
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
   applyAmbientLayers();
+
+  // --- fireflies: appear at night, drift slowly around the tree zone ---
+  function renderFireflies() {
+    const container = document.getElementById('fireflies');
+    if (!container) return;
+    container.innerHTML = '';
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const w = state.weather || {};
+    const h = new Date().getHours();
+    const isNight = w.isDay === 0 || (w.isDay == null && (h < 6 || h >= 20));
+    if (!isNight) return;
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
+    const count = isMobile ? 3 : 5;
+    let s = 67;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
+    for (let i = 0; i < count; i++) {
+      const f = document.createElement('div');
+      f.className = 'firefly';
+      f.style.left = (8 + rnd() * 62).toFixed(1) + '%';
+      f.style.top = (12 + rnd() * 58).toFixed(1) + '%';
+      f.style.setProperty('--dur', (15 + rnd() * 10).toFixed(1) + 's');
+      f.style.setProperty('--delay', (-rnd() * 18).toFixed(1) + 's');
+      f.style.animationDirection = (i % 2 === 0) ? 'alternate' : 'alternate-reverse';
+      container.appendChild(f);
+    }
+  }
 
   // --- forest hill: render grass blades along the band ---
   function renderHill() {
@@ -2670,6 +2738,7 @@
       if (typeof updateLastBreak === 'function') updateLastBreak();
       if (typeof updateLastStood === 'function') updateLastStood();
       if (typeof renderIntention === 'function') renderIntention();
+      if (typeof renderFireflies === 'function') renderFireflies();
       if (typeof fetchWeather === 'function') fetchWeather(false);
     } catch (_) {}
   });
