@@ -676,6 +676,22 @@
     background: var(--bg) !important;
     animation: none !important;
   }
+  body.ambient-off .grain { display: none; }
+
+  /* film grain — subtle photographic texture across the whole page */
+  .grain {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    background-size: 160px 160px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grain { display: none; }
+  }
 
   /* ambient help panel */
   .ambient-help {
@@ -692,20 +708,44 @@
   .ambient-help p:last-child { margin-bottom: 0; }
   .ambient-help em { color: var(--accent); font-style: normal; font-weight: 600; }
 
-  /* forest hill — grounds the tree in a green horizon line */
+  /* forest hills — layered depth with atmospheric haze */
   .hill {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    height: 22vh;
-    max-height: 200px;
-    min-height: 100px;
+    height: 28vh;
+    max-height: 240px;
+    min-height: 120px;
     pointer-events: none;
     z-index: -1;
     overflow: hidden;
-    opacity: 0.92;
   }
+  .hill .layer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    width: 100%;
+    display: block;
+    transition: transform .65s cubic-bezier(.2,.7,.2,1);
+    will-change: transform;
+  }
+  /* far layer — high up, hazy blue-green (atmospheric perspective) */
+  .hill .layer-far {
+    bottom: 38%;
+    height: 60%;
+    opacity: 0.7;
+    transform: translate3d(calc(var(--parallax-x, 0px) * 0.25), 0, 0);
+    filter: blur(0.4px);
+  }
+  /* mid layer — moderate haze, more saturated */
+  .hill .layer-mid {
+    bottom: 14%;
+    height: 70%;
+    opacity: 0.85;
+    transform: translate3d(calc(var(--parallax-x, 0px) * 0.55), 0, 0);
+  }
+  /* near layer — fully saturated, anchored to bottom (existing front hill) */
   .hill .hill-shape {
     position: absolute;
     inset: 0;
@@ -1008,12 +1048,32 @@
 <body>
 <div id="weatherOverlay" class="weather-overlay" aria-hidden="true"></div>
 <div id="hill" class="hill" aria-hidden="true">
+  <svg class="layer layer-far" viewBox="0 0 100 30" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="hillFarGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"  stop-color="#5b7a78" stop-opacity="0.40" />
+        <stop offset="60%" stop-color="#3a4f56" stop-opacity="0.55" />
+        <stop offset="100%" stop-color="#1f2832" stop-opacity="0.7" />
+      </linearGradient>
+    </defs>
+    <path d="M 0 30 L 0 18 Q 14 12 28 16 Q 44 20 58 14 Q 72 9 84 13 Q 92 15 100 12 L 100 30 Z" fill="url(#hillFarGrad)" />
+  </svg>
+  <svg class="layer layer-mid" viewBox="0 0 100 30" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="hillMidGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#3e5f4a" stop-opacity="0.7" />
+        <stop offset="60%"  stop-color="#26402f" stop-opacity="0.85" />
+        <stop offset="100%" stop-color="#152019" stop-opacity="0.96" />
+      </linearGradient>
+    </defs>
+    <path d="M 0 30 L 0 14 Q 22 6 40 11 Q 60 17 78 8 Q 92 4 100 9 L 100 30 Z" fill="url(#hillMidGrad)" />
+  </svg>
   <svg class="hill-shape" viewBox="0 0 100 30" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="hillGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%"   stop-color="#3a6a4a" stop-opacity="0.55" />
-        <stop offset="35%"  stop-color="#2a4d36" stop-opacity="0.78" />
-        <stop offset="70%"  stop-color="#1a2c22" stop-opacity="0.92" />
+        <stop offset="0%"   stop-color="#3a6a4a" stop-opacity="0.65" />
+        <stop offset="35%"  stop-color="#2a4d36" stop-opacity="0.85" />
+        <stop offset="70%"  stop-color="#1a2c22" stop-opacity="0.95" />
         <stop offset="100%" stop-color="#0f1115" stop-opacity="1" />
       </linearGradient>
     </defs>
@@ -1021,6 +1081,7 @@
   </svg>
   <div class="grass-band"></div>
 </div>
+<div class="grain" aria-hidden="true"></div>
 <div id="fireflies" class="fireflies" aria-hidden="true"></div>
 <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div class="app">
