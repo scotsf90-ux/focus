@@ -131,6 +131,17 @@
     font-variant-numeric: tabular-nums;
   }
   header .stats b { color: var(--text); font-weight: 600; }
+  header .stats .weather-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+  }
+  header .stats .weather-chip .glyph {
+    font-size: 14px;
+    line-height: 1;
+  }
+  header .stats .weather-chip.fresh .glyph { color: var(--accent-2); }
   .icon-btn {
     background: transparent;
     border: 1px solid var(--line);
@@ -719,6 +730,7 @@
         <span>Today: <b id="streakCount">0</b></span>
         <span>·</span>
         <span>Last break: <b id="lastBreak">—</b></span>
+        <span id="weatherChip" class="weather-chip" hidden></span>
       </div>
       <button id="installBtn" class="icon-btn" title="Install app" aria-label="Install app" hidden>⬇</button>
       <button id="weekBtn" class="icon-btn" title="Weekly look-back" aria-label="Open weekly look-back">📊</button>
@@ -939,6 +951,7 @@
   // ambient doesn't auto-resume — browsers block autoplay; user must click
   state.ambient.type = 'off';
   state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
+  state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
   state.alarmLastFiredAt ??= null;
   state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
 
@@ -1650,6 +1663,7 @@
           error: null
         };
         save(); refreshGeoStatus();
+        fetchWeather(true); // first fetch on grant
       },
       err => {
         state.geo = {
@@ -1674,6 +1688,77 @@
       }
     });
   }
+
+  // --- weather fetch (Open-Meteo, free, no API key) ---
+  // WMO weather code → simple visual bucket
+  function wmoToBucket(code) {
+    if (code == null) return null;
+    if (code === 0) return 'clear';
+    if (code <= 3) return code <= 1 ? 'clear' : 'cloudy';
+    if (code === 45 || code === 48) return 'fog';
+    if (code >= 51 && code <= 67) return 'rain';
+    if (code >= 71 && code <= 77) return 'snow';
+    if (code >= 80 && code <= 82) return 'rain';
+    if (code >= 85 && code <= 86) return 'snow';
+    if (code >= 95) return 'thunder';
+    return 'cloudy';
+  }
+  function bucketGlyph(bucket, isDay) {
+    if (bucket === 'clear')   return isDay === 0 ? '🌙' : '☀';
+    if (bucket === 'cloudy')  return isDay === 0 ? '☁' : '⛅';
+    if (bucket === 'rain')    return '🌧';
+    if (bucket === 'snow')    return '❄';
+    if (bucket === 'fog')     return '🌫';
+    if (bucket === 'thunder') return '⛈';
+    return '·';
+  }
+  function preferImperial() {
+    try {
+      const lang = navigator.language || '';
+      return /[-_]US$/.test(lang) || /[-_]LR$/.test(lang) || /[-_]MM$/.test(lang);
+    } catch (_) { return false; }
+  }
+  async function fetchWeather(force = false) {
+    if (!state.geo.granted || state.geo.lat == null || state.geo.lng == null) return;
+    const fresh = state.weather.fetchedAt && (Date.now() - state.weather.fetchedAt) < 30 * 60 * 1000;
+    if (!force && fresh) { renderWeatherChip(); return; }
+    const unit = preferImperial() ? 'fahrenheit' : 'celsius';
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${state.geo.lat.toFixed(4)}&longitude=${state.geo.lng.toFixed(4)}&current=weather_code,cloud_cover,temperature_2m,is_day&timezone=auto&temperature_unit=${unit}`;
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      const c = data.current || {};
+      state.weather = {
+        code: c.weather_code,
+        cloudCover: c.cloud_cover,
+        temperature: c.temperature_2m,
+        isDay: c.is_day,
+        bucket: wmoToBucket(c.weather_code),
+        fetchedAt: Date.now(),
+        unit
+      };
+      save();
+      renderWeatherChip();
+    } catch (e) {
+      // silent — keep stale data visible
+      renderWeatherChip();
+    }
+  }
+  function renderWeatherChip() {
+    const chip = $('weatherChip');
+    if (!chip) return;
+    const w = state.weather;
+    if (!w || w.bucket == null) { chip.hidden = true; return; }
+    const tempStr = w.temperature != null
+      ? Math.round(w.temperature) + '°' + (w.unit === 'fahrenheit' ? 'F' : 'C')
+      : '';
+    chip.innerHTML = `<span class="glyph">${bucketGlyph(w.bucket, w.isDay)}</span><span>${tempStr}</span>`;
+    const isFresh = w.fetchedAt && (Date.now() - w.fetchedAt) < 60 * 60 * 1000;
+    chip.classList.toggle('fresh', !!isFresh);
+    chip.hidden = false;
+  }
+  setInterval(() => fetchWeather(false), 30 * 60 * 1000);
 
   // --- weekly look-back ---
   function openWeek() {
@@ -1895,6 +1980,8 @@
   updateGreeting();
   renderIntention();
   renderTree();
+  renderWeatherChip();
+  fetchWeather(false);
 
   // --- ambient tree (grows with consistency) ---
   // Trunk always present. Branches scale with total focus blocks. Leaves bloom
