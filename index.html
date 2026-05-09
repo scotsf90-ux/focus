@@ -118,6 +118,30 @@
     color: var(--muted);
     font-weight: 400;
   }
+  header .greeting .now {
+    color: var(--muted);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    margin-left: 8px;
+    opacity: 0.85;
+  }
+  header .greeting .now .pulse {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-2);
+    margin-right: 5px;
+    vertical-align: 1px;
+    animation: livePulse 2.4s ease-in-out infinite;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.85); }
+    50%      { opacity: 1;    transform: scale(1.05); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    header .greeting .now .pulse { animation: none !important; opacity: 0.7 !important; }
+  }
   header .greeting.warn .ctx { color: var(--warn); }
   header .greeting.cool .ctx { color: var(--accent-2); }
   header .right {
@@ -688,6 +712,26 @@
     width: 100%;
     height: 100%;
     display: block;
+    transform: translate3d(var(--parallax-x, 0px), 0, 0);
+    transition: transform .55s cubic-bezier(.2,.7,.2,1);
+    will-change: transform;
+  }
+  .hill .grass-band {
+    transform: translate3d(calc(var(--parallax-x, 0px) * 1.4), 0, 0);
+    transition: transform .55s cubic-bezier(.2,.7,.2,1);
+  }
+  .weather-overlay .cloud {
+    /* clouds drift PLUS parallax — translate via filter chain on parent */
+  }
+  .weather-overlay {
+    transform: translate3d(calc(var(--parallax-x, 0px) * 0.6), 0, 0);
+    transition: transform .55s cubic-bezier(.2,.7,.2,1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hill .hill-shape, .hill .grass-band, .weather-overlay {
+      transform: none !important;
+      transition: none !important;
+    }
   }
   .hill .grass-band {
     position: absolute;
@@ -1779,9 +1823,23 @@
 
     el.classList.remove('warn', 'cool');
     if (cls) el.classList.add(cls);
-    el.innerHTML = ctx ? `${greet} · <span class="ctx">${ctx}</span>` : greet + '.';
+    // build greeting + clock skeleton (preserve .pulse element so its animation doesn't reset)
+    el.innerHTML = (ctx ? `${greet} · <span class="ctx">${ctx}</span>` : greet + '.') +
+      `<span class="now"><span class="pulse"></span><span class="time"></span></span>`;
+    updateClock();
+  }
+  function updateClock() {
+    const time = document.querySelector('header .greeting .now .time');
+    if (!time) return;
+    const now = new Date();
+    let hh = now.getHours();
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ampm = hh < 12 ? 'am' : 'pm';
+    hh = (hh % 12) || 12;
+    time.textContent = `${hh}:${mm}${ampm}`;
   }
   setInterval(updateGreeting, 30 * 1000);
+  setInterval(updateClock, 30 * 1000); // refresh time text — pulse keeps its own rhythm
 
   // --- settings ---
   function openSettings() {
@@ -2545,6 +2603,43 @@
   }
   updateTreeMood();
   setInterval(updateTreeMood, 5 * 60 * 1000);
+
+  // --- pointer parallax (subtle, desktop only) ---
+  // Hill, grass, and weather overlay shift slightly with mouse position so the
+  // page feels alive. Skipped for touch and reduced-motion preferences.
+  if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let _parallaxLast = 0;
+    window.addEventListener('pointermove', e => {
+      if (e.pointerType === 'touch') return;
+      const now = Date.now();
+      if (now - _parallaxLast < 32) return; // throttle ~30fps
+      _parallaxLast = now;
+      const w = window.innerWidth || 1;
+      const raw = ((e.clientX / w) - 0.5) * 8;
+      const x = Math.max(-8, Math.min(8, isFinite(raw) ? raw : 0));
+      document.documentElement.style.setProperty('--parallax-x', x.toFixed(1) + 'px');
+    }, { passive: true });
+    window.addEventListener('pointerleave', () => {
+      document.documentElement.style.setProperty('--parallax-x', '0px');
+    });
+  }
+
+  // --- tab visibility refresh ---
+  // When the tab regains focus, refresh time-aware visuals so the page never
+  // feels like it's been frozen in the past.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    try {
+      if (typeof updateGreeting === 'function') updateGreeting();
+      if (typeof updateSky === 'function') updateSky();
+      if (typeof updateTreeMood === 'function') updateTreeMood();
+      if (typeof checkDateRollover === 'function') checkDateRollover();
+      if (typeof updateLastBreak === 'function') updateLastBreak();
+      if (typeof updateLastStood === 'function') updateLastStood();
+      if (typeof renderIntention === 'function') renderIntention();
+      if (typeof fetchWeather === 'function') fetchWeather(false);
+    } catch (_) {}
+  });
 
   // --- service worker registration (PWA + offline support) ---
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
