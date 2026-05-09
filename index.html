@@ -644,6 +644,84 @@
   /* simple checkbox styling */
   input[type=checkbox] { accent-color: var(--accent); }
 
+  /* weather overlay — subtle particles tied to current weather */
+  .weather-overlay {
+    position: fixed;
+    top: 0; right: 0; bottom: 0; left: 0;
+    pointer-events: none;
+    z-index: -1;
+    overflow: hidden;
+  }
+  .weather-overlay .rain-drop {
+    position: absolute;
+    width: 1px;
+    height: 14px;
+    background: linear-gradient(to bottom, rgba(174,194,224,0) 0%, rgba(174,194,224,0.5) 100%);
+    border-radius: 1px;
+    left: var(--x, 50vw);
+    animation: rainFall var(--dur, 1.1s) linear infinite;
+    animation-delay: var(--delay, 0s);
+    will-change: transform;
+  }
+  @keyframes rainFall {
+    0%   { transform: translate3d(0, -10vh, 0); opacity: 0; }
+    8%   { opacity: 0.55; }
+    100% { transform: translate3d(2vw, 110vh, 0); opacity: 0.15; }
+  }
+  .weather-overlay .snowflake {
+    position: absolute;
+    width: 3px; height: 3px;
+    background: rgba(255,255,255,0.7);
+    border-radius: 50%;
+    left: var(--x, 50vw);
+    animation: snowFall var(--dur, 9s) linear infinite;
+    animation-delay: var(--delay, 0s);
+    will-change: transform, opacity;
+  }
+  @keyframes snowFall {
+    0%   { transform: translate3d(0, -5vh, 0); opacity: 0; }
+    12%  { opacity: var(--alpha, 0.5); }
+    50%  { transform: translate3d(2vw, 50vh, 0); }
+    88%  { opacity: var(--alpha, 0.5); }
+    100% { transform: translate3d(-1vw, 105vh, 0); opacity: 0; }
+  }
+  .weather-overlay .cloud {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(220,225,240,0.22) 0%, rgba(220,225,240,0) 70%);
+    filter: blur(10px);
+    top: var(--y, 12%);
+    animation: cloudDrift var(--dur, 90s) linear infinite;
+    animation-delay: var(--delay, 0s);
+    will-change: transform;
+  }
+  @keyframes cloudDrift {
+    0%   { transform: translate3d(-45vw, 0, 0); }
+    100% { transform: translate3d(145vw, 0, 0); }
+  }
+  .weather-overlay .star {
+    position: absolute;
+    width: 2px; height: 2px;
+    background: rgba(255,255,235,0.85);
+    border-radius: 50%;
+    box-shadow: 0 0 3px rgba(255,255,235,0.45);
+    left: var(--x, 50vw);
+    top: var(--y, 30vh);
+    animation: starTwinkle var(--dur, 4s) ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+    will-change: opacity;
+  }
+  @keyframes starTwinkle {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 0.85; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .weather-overlay .rain-drop,
+    .weather-overlay .snowflake,
+    .weather-overlay .cloud,
+    .weather-overlay .star { animation: none !important; opacity: 0.2 !important; }
+  }
+
   /* ambient tree (grows with consistency) */
   .tree {
     position: fixed;
@@ -718,6 +796,7 @@
 </style>
 </head>
 <body>
+<div id="weatherOverlay" class="weather-overlay" aria-hidden="true"></div>
 <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div class="app">
   <header>
@@ -1740,6 +1819,7 @@
       };
       save();
       renderWeatherChip();
+      renderWeatherOverlay();
     } catch (e) {
       // silent — keep stale data visible
       renderWeatherChip();
@@ -1757,6 +1837,80 @@
     const isFresh = w.fetchedAt && (Date.now() - w.fetchedAt) < 60 * 60 * 1000;
     chip.classList.toggle('fresh', !!isFresh);
     chip.hidden = false;
+  }
+
+  // --- weather visual overlay (rain / snow / clouds / stars) ---
+  function renderWeatherOverlay() {
+    const el = $('weatherOverlay');
+    if (!el) return;
+    el.innerHTML = '';
+    const w = state.weather;
+    if (!w || w.bucket == null) return;
+
+    // deterministic-ish pseudo-random so layout is stable per session
+    let s = 17 + (w.code || 0);
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
+
+    const make = (cls, props) => {
+      const d = document.createElement('div');
+      d.className = cls;
+      for (const [k, v] of Object.entries(props)) d.style.setProperty(k, v);
+      el.appendChild(d);
+    };
+
+    if (w.bucket === 'rain' || w.bucket === 'thunder') {
+      const count = w.bucket === 'thunder' ? 38 : 28;
+      for (let i = 0; i < count; i++) {
+        make('rain-drop', {
+          '--x': (rnd() * 100).toFixed(1) + 'vw',
+          '--dur': (0.85 + rnd() * 0.55).toFixed(2) + 's',
+          '--delay': (-rnd() * 2).toFixed(2) + 's'
+        });
+      }
+    }
+    if (w.bucket === 'snow') {
+      const count = 26;
+      for (let i = 0; i < count; i++) {
+        const size = (2 + rnd() * 2.5).toFixed(1);
+        const d = document.createElement('div');
+        d.className = 'snowflake';
+        d.style.setProperty('--x', (rnd() * 100).toFixed(1) + 'vw');
+        d.style.setProperty('--dur', (6 + rnd() * 8).toFixed(2) + 's');
+        d.style.setProperty('--delay', (-rnd() * 6).toFixed(2) + 's');
+        d.style.setProperty('--alpha', (0.35 + rnd() * 0.3).toFixed(2));
+        d.style.width = size + 'px';
+        d.style.height = size + 'px';
+        el.appendChild(d);
+      }
+    }
+    // clouds when overcast/cloudy/fog OR cloudCover high
+    const wantsClouds = w.bucket === 'cloudy' || w.bucket === 'fog' || (w.cloudCover != null && w.cloudCover > 55 && w.bucket !== 'rain' && w.bucket !== 'snow');
+    if (wantsClouds) {
+      const count = w.bucket === 'fog' ? 5 : 4;
+      for (let i = 0; i < count; i++) {
+        const d = document.createElement('div');
+        d.className = 'cloud';
+        d.style.setProperty('--y', (6 + rnd() * 38).toFixed(1) + '%');
+        d.style.setProperty('--dur', (70 + rnd() * 80).toFixed(0) + 's');
+        d.style.setProperty('--delay', (-rnd() * 80).toFixed(0) + 's');
+        d.style.width = (220 + rnd() * 220).toFixed(0) + 'px';
+        d.style.height = (60 + rnd() * 50).toFixed(0) + 'px';
+        d.style.opacity = (0.5 + rnd() * 0.5).toFixed(2);
+        el.appendChild(d);
+      }
+    }
+    // stars at night, regardless of bucket
+    if (w.isDay === 0) {
+      const count = 32;
+      for (let i = 0; i < count; i++) {
+        make('star', {
+          '--x': (rnd() * 100).toFixed(1) + 'vw',
+          '--y': (rnd() * 60).toFixed(1) + 'vh',
+          '--dur': (3 + rnd() * 4).toFixed(2) + 's',
+          '--delay': (-rnd() * 6).toFixed(2) + 's'
+        });
+      }
+    }
   }
   setInterval(() => fetchWeather(false), 30 * 60 * 1000);
 
@@ -1981,6 +2135,7 @@
   renderIntention();
   renderTree();
   renderWeatherChip();
+  renderWeatherOverlay();
   fetchWeather(false);
 
   // --- ambient tree (grows with consistency) ---
