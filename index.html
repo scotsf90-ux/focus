@@ -1002,6 +1002,31 @@
   .tree-wrap.summer { /* default — full saturation */ }
   .tree-wrap.autumn { filter: hue-rotate(-25deg) saturate(1.2) brightness(0.98); }
   .tree-wrap.winter { filter: saturate(0.6) brightness(0.85); }
+
+  /* streak halo — soft warm glow that intensifies with consecutive-day streak */
+  .tree-glow {
+    position: absolute;
+    inset: 0;
+    transition: filter 3s ease, opacity 4s ease;
+  }
+  .tree-glow.streak-7 {
+    filter: drop-shadow(0 0 14px rgba(255,184,77,0.22));
+  }
+  .tree-glow.streak-30 {
+    filter: drop-shadow(0 0 18px rgba(255,184,77,0.32));
+    animation: streakPulse 8s ease-in-out infinite;
+  }
+  .tree-glow.streak-100 {
+    filter: drop-shadow(0 0 22px rgba(255,200,100,0.4)) hue-rotate(8deg) saturate(1.1);
+    animation: streakPulse 8s ease-in-out infinite;
+  }
+  @keyframes streakPulse {
+    0%, 100% { opacity: 0.88; }
+    50%      { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tree-glow.streak-30, .tree-glow.streak-100 { animation: none !important; opacity: 1 !important; }
+  }
   .tree {
     position: absolute;
     inset: 0;
@@ -1140,7 +1165,9 @@
 <div id="butterflies" class="butterflies" aria-hidden="true"></div>
 <div id="fireflies" class="fireflies" aria-hidden="true"></div>
 <div id="treeWrap" class="tree-wrap" aria-hidden="true">
-  <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+  <div id="treeGlow" class="tree-glow">
+    <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+  </div>
 </div>
 <div class="app">
   <header>
@@ -1484,6 +1511,7 @@
       save();
       setStreak(state.streak);
       renderTree();
+      applyStreakHalo();
       notify('Focus block done', 'Time to stand up and step outside.');
       openBreak();
     } else {
@@ -2370,6 +2398,7 @@
     save();
     setStreak(state.streak);
     renderTree();
+    applyStreakHalo();
     const banner = $('doneBanner');
     banner.textContent = '✓ Logged. Take the break — that\'s the deal.';
     banner.classList.add('show');
@@ -2545,6 +2574,7 @@
   renderFireflies();
   renderButterflies();
   applySeason();
+  applyStreakHalo();
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
@@ -2834,6 +2864,42 @@
   }
   updateSky();
   setInterval(updateSky, 5 * 60 * 1000); // re-tint every 5 minutes
+
+  // --- consecutive-day streak halo (7+ / 30+ / 100+) ---
+  function computeConsecutiveDays() {
+    const hist = state.history || {};
+    let count = 0;
+    const d = new Date();
+    // walk backwards from today; require >=1 focusBlock
+    for (let i = 0; i < 365; i++) {
+      const key = d.toISOString().slice(0,10);
+      const h = hist[key];
+      if (h && (h.focusBlocks || 0) > 0) {
+        count++;
+      } else if (i === 0) {
+        // grace: today might not have a block yet but yesterday counted
+        // — break only if BOTH today and yesterday are empty
+        const y = new Date(d); y.setDate(y.getDate() - 1);
+        const yk = y.toISOString().slice(0,10);
+        const yh = hist[yk];
+        if (!yh || !(yh.focusBlocks > 0)) break;
+        // skip today, continue from yesterday
+      } else {
+        break;
+      }
+      d.setDate(d.getDate() - 1);
+    }
+    return count;
+  }
+  function applyStreakHalo() {
+    const glow = document.getElementById('treeGlow');
+    if (!glow) return;
+    glow.classList.remove('streak-7','streak-30','streak-100');
+    const c = computeConsecutiveDays();
+    if (c >= 100)     glow.classList.add('streak-100');
+    else if (c >= 30) glow.classList.add('streak-30');
+    else if (c >= 7)  glow.classList.add('streak-7');
+  }
 
   // --- seasonal tree tint (spring/summer/autumn/winter via CSS class on wrapper) ---
   function getSeason() {
