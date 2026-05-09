@@ -1,0 +1,1784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>One Thing — focus tool</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f232c;
+    --line: #2a2f3a;
+    --text: #e8ecf3;
+    --muted: #8a93a6;
+    --accent: #ffb84d;
+    --accent-2: #74e0a4;
+    --warn: #ff7a7a;
+    --shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 600px at 70% -10%, #1c2230 0%, var(--bg) 60%);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Calm staggered entrance — ADHD-aware, no pulse, no flash */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  header, .cutoff-banner.show, .card, .grid > .card, .footer-tip {
+    animation: fadeInUp .45s cubic-bezier(.2,.7,.2,1) both;
+  }
+  header                   { animation-delay: 0ms;   }
+  .focus.card              { animation-delay: 60ms;  }
+  .grid > .card:nth-child(1){ animation-delay: 140ms; }
+  .grid > .card:nth-child(2){ animation-delay: 200ms; }
+  .footer-tip              { animation-delay: 280ms; }
+
+  /* Gentle attention on empty primary input — fades in once, stays calm */
+  @keyframes attentionRing {
+    0%   { box-shadow: 0 0 0 0 rgba(255,184,77,0); }
+    60%  { box-shadow: 0 0 0 6px rgba(255,184,77,0.10); }
+    100% { box-shadow: 0 0 0 0 rgba(255,184,77,0); }
+  }
+  #taskInput.is-empty {
+    animation: attentionRing 2.4s ease-out 700ms 1 both;
+    border-radius: 6px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    header, .cutoff-banner.show, .card, .grid > .card, .footer-tip,
+    #taskInput.is-empty { animation: none !important; }
+  }
+
+  /* mobile rules placed at end of stylesheet — see below for actual rules */
+  .app {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 28px 22px 80px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  header .brand-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  header .brand {
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: var(--muted);
+    font-size: 13px;
+    text-transform: uppercase;
+  }
+  header .greeting {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    transition: color .3s ease;
+  }
+  header .greeting .ctx {
+    color: var(--muted);
+    font-weight: 400;
+  }
+  header .greeting.warn .ctx { color: var(--warn); }
+  header .greeting.cool .ctx { color: var(--accent-2); }
+  header .right {
+    display: flex; align-items: center; gap: 12px;
+  }
+  header .stats {
+    display: flex;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  header .stats b { color: var(--text); font-weight: 600; }
+  .icon-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+  }
+  .icon-btn:hover { color: var(--text); background: var(--panel-2); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: var(--shadow);
+  }
+
+  .focus h2 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  #taskInput {
+    width: 100%;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    outline: none;
+    font-family: 'Charter', 'Iowan Old Style', 'Iowan', 'Sitka Text', 'PT Serif', Georgia, 'Times New Roman', serif;
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    padding: 6px 0 12px;
+    border-bottom: 1px dashed var(--line);
+    transition: border-color .25s ease;
+  }
+  #taskInput:focus { border-bottom-color: rgba(255,184,77,0.5); }
+  #taskInput::placeholder { color: #4a5263; font-weight: 400; font-style: italic; }
+
+  .timer-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 18px;
+    align-items: center;
+    margin-top: 18px;
+  }
+  .timer {
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
+    font-size: 84px;
+    font-weight: 700;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+  .timer.running { color: var(--accent); }
+  .timer.break   { color: var(--accent-2); }
+  .timer.over    { color: var(--warn); }
+
+  /* progress bar under the timer */
+  .progress-track {
+    grid-column: 1 / -1;
+    height: 3px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 14px;
+    opacity: 0;
+    transition: opacity .25s ease;
+  }
+  .progress-track.active { opacity: 1; }
+  .progress-track .fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width .9s linear, background .25s ease;
+  }
+  .progress-track.break .fill { background: var(--accent-2); }
+  .progress-track.over .fill { background: var(--warn); }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset, 0 1px 1px rgba(0,0,0,0.2);
+    transition:
+      transform .12s cubic-bezier(.2,.7,.2,1),
+      background .18s ease,
+      border-color .18s ease,
+      box-shadow .18s ease,
+      color .18s ease;
+  }
+  button:hover {
+    background: #232834;
+    border-color: #3a4150;
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 10px rgba(0,0,0,0.35);
+  }
+  button:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset, 0 1px 2px rgba(0,0,0,0.3);
+    transition-duration: .04s;
+  }
+  button:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(255,184,77,0.25);
+  }
+  button.primary {
+    background: var(--accent);
+    color: #1a1300;
+    border-color: transparent;
+    font-weight: 700;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 6px 14px rgba(255,184,77,0.18);
+  }
+  button.primary:hover {
+    background: #ffc266;
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.3) inset, 0 8px 20px rgba(255,184,77,0.32);
+  }
+  button.primary:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset, 0 2px 6px rgba(255,184,77,0.25);
+  }
+  button.ghost { background: transparent; box-shadow: none; }
+  button.ghost:hover { background: rgba(255,255,255,0.04); box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+  button.danger { color: var(--warn); border-color: #3a2a2a; }
+  button.danger:hover { background: rgba(255,122,122,0.08); border-color: #5a3030; }
+  button[disabled] { opacity: .45; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+  .duration-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .duration-pills button {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 999px;
+    color: var(--muted);
+  }
+  .duration-pills button.active {
+    background: #2a2f3a;
+    color: var(--text);
+    border-color: #3a4150;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 18px;
+    margin-top: 18px;
+  }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted);
+    margin: 0 0 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-title .hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: #5b6478; }
+
+  /* parking lot */
+  #parkInput {
+    width: 100%;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    outline: none;
+  }
+  #parkInput:focus { border-color: #3a4150; }
+  ul.park-list {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  ul.park-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: var(--panel-2);
+    font-size: 14px;
+  }
+  ul.park-list li .x {
+    color: var(--muted);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    font-size: 14px;
+    padding: 0 4px;
+  }
+  ul.park-list li .x:hover { color: var(--warn); }
+  @keyframes parkSlideIn {
+    from { opacity: 0; transform: translateY(-4px); max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; }
+    to   { opacity: 1; transform: translateY(0); max-height: 60px; padding-top: 8px; padding-bottom: 8px; margin-top: 0; }
+  }
+  ul.park-list li.entering {
+    animation: parkSlideIn .28s cubic-bezier(.2,.7,.2,1) both;
+  }
+  .park-empty {
+    margin-top: 14px;
+    padding: 16px 14px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+    line-height: 1.5;
+    border: 1px dashed rgba(138,147,166,0.18);
+    border-radius: 10px;
+    transition: opacity .25s ease;
+  }
+  .park-empty.hidden { display: none; }
+
+  /* contacts */
+  .contact-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .contact-btn {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background .18s ease, border-color .18s ease, transform .15s ease, box-shadow .18s ease;
+  }
+  .contact-btn:hover { background: #232834; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.25); }
+  .contact-btn .glyph { color: var(--accent-2); font-size: 12px; }
+  .contact-btn.call .glyph { color: var(--accent); }
+  .contact-btn .since {
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .contact-btn.stale {
+    border-color: rgba(255,184,77,0.4);
+    box-shadow: 0 0 0 1px rgba(255,184,77,0.15) inset;
+  }
+  .contact-btn.stale .since { color: var(--accent); }
+  .contact-empty { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .stale-nudge {
+    font-size: 13px;
+    color: var(--accent);
+    margin-bottom: 10px;
+    line-height: 1.4;
+  }
+
+  /* overlay (used for break, cutoff, alarm, settings, week) */
+  .overlay {
+    position: fixed;
+    top: 0; right: 0; bottom: 0; left: 0;
+    background: rgba(8, 10, 14, 0.85);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 50;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .22s ease, visibility 0s linear .22s, backdrop-filter .22s ease;
+  }
+  .overlay.show {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity .22s ease, visibility 0s linear 0s, backdrop-filter .22s ease;
+  }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 28px;
+    max-width: 560px;
+    width: 100%;
+    transform: scale(.96) translateY(8px);
+    opacity: 0;
+    transition: transform .28s cubic-bezier(.2,.7,.2,1), opacity .22s ease;
+  }
+  .overlay.show .modal {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .overlay, .overlay.show, .modal, .overlay.show .modal {
+      transition: opacity .12s ease, visibility 0s linear !important;
+      transform: none !important;
+    }
+  }
+  .modal.center { text-align: center; }
+  .modal h2 { margin: 0 0 6px; font-size: 22px; }
+  .modal p.prompt {
+    font-size: 18px;
+    color: var(--accent-2);
+    margin: 14px 0 18px;
+    line-height: 1.4;
+  }
+  .modal .actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .modal .small { font-size: 12px; color: var(--muted); }
+  .modal .close { float: right; }
+  .modal h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin: 16px 0 8px; font-weight: 600; }
+  .modal label { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0; }
+  .modal input[type=number], .modal input[type=time], .modal input[type=text], .modal input[type=tel], .modal select {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 10px; font-size: 14px; outline: none;
+  }
+  .modal input[type=text], .modal input[type=tel] { width: 100%; }
+  .modal input:focus, .modal select:focus { border-color: #3a4150; }
+  .modal .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .contact-edit-row { display: grid; grid-template-columns: 1fr 1fr 90px 28px; gap: 6px; align-items: center; margin-bottom: 6px; }
+  @media (max-width: 520px) { .contact-edit-row { grid-template-columns: 1fr 1fr; } }
+
+  /* morning intention */
+  .intention-strip {
+    margin: 0 0 14px;
+    padding: 10px 14px;
+    background: linear-gradient(90deg, rgba(116,224,164,0.06), rgba(255,184,77,0.04));
+    border: 1px solid rgba(116,224,164,0.18);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    transition: opacity .3s ease;
+  }
+  .intention-strip .sun { font-size: 14px; }
+  .intention-strip.set .text {
+    color: var(--text);
+    font-style: italic;
+    flex: 1;
+  }
+  .intention-strip.set .label {
+    color: var(--accent-2);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    font-weight: 600;
+  }
+  .intention-strip.empty .label {
+    color: var(--accent-2);
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .intention-strip input[type=text] {
+    flex: 1;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 14px;
+    outline: none;
+    min-width: 0;
+  }
+  .intention-strip input[type=text]:focus { border-color: rgba(116,224,164,0.5); box-shadow: 0 0 0 3px rgba(116,224,164,0.12); }
+  .intention-strip button {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  .intention-strip .edit-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--muted);
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .intention-strip .edit-btn:hover { color: var(--text); border-color: var(--line); }
+
+  /* reflection */
+  .reflection-wrap { margin-top: 6px; }
+  #reflectionInput {
+    width: 100%;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease;
+  }
+  #reflectionInput:focus {
+    border-color: rgba(116,224,164,0.5);
+    box-shadow: 0 0 0 3px rgba(116,224,164,0.12);
+  }
+  .reflections-list {
+    margin-top: 14px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+  .reflections-list h4 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .reflection-item {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+    line-height: 1.4;
+    border-bottom: 1px dashed var(--line);
+  }
+  .reflection-item:last-child { border-bottom: none; }
+  .reflection-item .day { color: var(--accent-2); font-weight: 600; }
+  .reflection-item .text { color: var(--text); font-style: italic; }
+  .reflection-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+
+  /* week chart */
+  .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 8px; }
+  .week-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .week-bar-wrap { width: 100%; height: 120px; display: flex; align-items: flex-end; }
+  .week-bar { width: 100%; background: var(--accent); border-radius: 6px 6px 0 0; min-height: 2px; }
+  .week-col.today .week-bar { background: var(--accent-2); }
+  .week-col .day-label { font-size: 11px; color: var(--muted); }
+  .week-col .day-count { font-size: 12px; color: var(--text); font-weight: 600; }
+  .week-summary { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 14px; flex-wrap: wrap; }
+  .week-summary b { color: var(--text); font-weight: 700; }
+
+  .footer-tip {
+    margin-top: 22px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.6;
+  }
+  kbd {
+    background: #232834;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .energy-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .energy-row button { padding: 6px 10px; font-size: 13px; border-radius: 999px; }
+  .energy-row button.active { background: var(--accent-2); color: #002414; border-color: transparent; font-weight: 700; }
+
+  .done-banner {
+    display: none;
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(116, 224, 164, 0.08);
+    border: 1px solid rgba(116, 224, 164, 0.3);
+    border-radius: 10px;
+    font-size: 14px;
+    color: var(--accent-2);
+  }
+  .done-banner.show { display: block; }
+
+  /* cutoff banner */
+  .cutoff-banner {
+    display: none;
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    background: rgba(255, 122, 122, 0.08);
+    border: 1px solid rgba(255, 122, 122, 0.35);
+    border-radius: 12px;
+    color: var(--warn);
+    font-size: 14px;
+    display: none;
+  }
+  .cutoff-banner.show { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cutoff-banner b { color: #ffd1d1; }
+
+  /* simple checkbox styling */
+  input[type=checkbox] { accent-color: var(--accent); }
+
+  /* streak counter delight pop on increment */
+  @keyframes streakPop {
+    0%   { transform: scale(1);   color: var(--text); }
+    25%  { transform: scale(1.45); color: var(--accent-2); text-shadow: 0 0 12px rgba(116,224,164,0.5); }
+    100% { transform: scale(1);   color: var(--text); text-shadow: none; }
+  }
+  header .stats #streakCount {
+    display: inline-block;
+    transform-origin: center;
+    transition: color .3s ease;
+  }
+  header .stats #streakCount.pop {
+    animation: streakPop .6s cubic-bezier(.2,.7,.2,1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    header .stats #streakCount.pop { animation: none !important; }
+  }
+
+  /* mobile / responsive — placed last so it wins the cascade */
+  @media (max-width: 600px) {
+    .app { padding: 16px 14px 60px; }
+    header { gap: 8px; flex-wrap: wrap; }
+    header .right { gap: 8px; flex-wrap: wrap; }
+    header .stats { font-size: 12px; gap: 6px; flex-wrap: wrap; }
+    .icon-btn { width: 36px; height: 36px; }
+    .card { padding: 16px; border-radius: 14px; }
+    #taskInput { font-size: 22px; }
+    .timer { font-size: 60px; letter-spacing: -1px; }
+    .timer-row { grid-template-columns: 1fr; gap: 12px; }
+    .controls { justify-content: flex-start; gap: 6px; flex-wrap: wrap; }
+    .controls button { padding: 10px 12px; min-height: 40px; }
+    .duration-pills { gap: 4px; }
+    .duration-pills button { padding: 6px 9px; font-size: 11px; }
+    .grid { gap: 14px; }
+    .modal { padding: 20px; border-radius: 14px; }
+    .modal h2 { font-size: 19px; }
+    .modal p.prompt { font-size: 16px; }
+    .intention-strip { flex-wrap: wrap; padding: 10px 12px; gap: 8px; font-size: 13px; }
+    .intention-strip .label { flex-basis: 100%; }
+    .intention-strip input[type=text] { width: 100%; flex-basis: 100%; }
+    .cutoff-banner.show { flex-wrap: wrap; gap: 6px; font-size: 13px; padding: 10px 12px; }
+    .week-grid { gap: 4px; }
+    .week-bar-wrap { height: 90px; }
+    .week-col .day-label { font-size: 10px; }
+    .contact-edit-row { grid-template-columns: 1fr 1fr; }
+    .footer-tip { font-size: 11px; padding: 0 8px; }
+    .energy-row button, #ambientRow button { min-height: 36px; }
+  }
+  @media (max-width: 380px) {
+    .timer { font-size: 48px; }
+    #taskInput { font-size: 19px; }
+    .modal { padding: 16px; }
+    .duration-pills button { padding: 5px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand-block">
+      <div class="brand">One Thing</div>
+      <div id="greeting" class="greeting">Hello.</div>
+    </div>
+    <div class="right">
+      <div class="stats">
+        <span>Today: <b id="streakCount">0</b></span>
+        <span>·</span>
+        <span>Last break: <b id="lastBreak">—</b></span>
+      </div>
+      <button id="weekBtn" class="icon-btn" title="Weekly look-back" aria-label="Open weekly look-back">📊</button>
+      <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Open settings">⚙</button>
+    </div>
+  </header>
+
+  <div id="cutoffBanner" class="cutoff-banner">
+    <span>🚪 <b>Past your cutoff.</b> Close the laptop. Go be outside or with a person.</span>
+    <button id="cutoffSnooze" class="ghost" style="padding:6px 10px; font-size:12px; color: var(--muted);">snooze 30m</button>
+  </div>
+
+  <div id="intentionStrip" class="intention-strip" style="display:none;"></div>
+
+  <section class="card focus">
+    <h2>The one thing right now</h2>
+    <input id="taskInput" placeholder="What are you working on? (just one thing)" autocomplete="off" />
+
+    <div class="timer-row">
+      <div id="timer" class="timer">25:00</div>
+      <div class="controls" id="timerControls">
+        <button id="startBtn" class="primary">Start</button>
+        <button id="pauseBtn" class="ghost" hidden>Pause</button>
+        <button id="resetBtn" class="ghost">Reset</button>
+        <button id="doneBtn" class="ghost">Done early</button>
+      </div>
+      <div id="progressTrack" class="progress-track"><div class="fill" id="progressFill"></div></div>
+    </div>
+
+    <div class="duration-pills" id="durationPills">
+      <button data-min="15">15m sprint</button>
+      <button data-min="25" class="active">25m focus</button>
+      <button data-min="45">45m deep</button>
+      <button data-min="60">60m deep</button>
+    </div>
+
+    <div id="doneBanner" class="done-banner"></div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h3 class="panel-title">
+        Brain dump <span class="hint">parking lot for thoughts that aren't this task</span>
+      </h3>
+      <input id="parkInput" placeholder="Type a stray thought, hit Enter, get back to work" />
+      <ul id="parkList" class="park-list"></ul>
+      <div id="parkEmpty" class="park-empty">
+        No stray thoughts yet.<br>
+        They'll wait here when something pops up — so you can keep working.
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="panel-title">Body check</h3>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Energy</div>
+      <div id="energyRow" class="energy-row">
+        <button data-e="low">low</button>
+        <button data-e="meh">meh</button>
+        <button data-e="ok">ok</button>
+        <button data-e="good">good</button>
+        <button data-e="wired">wired</button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin:12px 0 6px;">Last stood up</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span id="lastStood" style="font-size:14px;">—</span>
+        <button id="standBtn" style="padding:6px 10px; font-size:12px;">I just stood up</button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin:14px 0 6px;">Reach out</div>
+      <div id="bodyContacts" class="contact-row"></div>
+      <div style="font-size:12px; color:var(--muted); margin:14px 0 6px;">Ambient sound</div>
+      <div id="ambientRow" class="energy-row">
+        <button data-amb="off">off</button>
+        <button data-amb="white">white</button>
+        <button data-amb="pink">pink</button>
+        <button data-amb="brown">brown</button>
+        <button data-amb="rain">rain</button>
+      </div>
+      <input type="range" id="ambientVol" min="0" max="40" value="8" style="width:100%; margin-top:10px; accent-color: var(--accent);" />
+      <div style="margin-top:14px; font-size:12px; color:var(--muted);">
+        Tip: if energy is "low" or "wired", your next break should be outside or with a person — not another tab.
+      </div>
+    </section>
+  </div>
+
+  <p class="footer-tip">
+    Shortcuts — <kbd>Space</kbd> start/pause · <kbd>Enter</kbd> in brain dump · <kbd>Esc</kbd> close modal.
+    State saves automatically.
+  </p>
+</div>
+
+<!-- BREAK / ALARM overlay -->
+<div id="overlay" class="overlay">
+  <div class="modal center" role="dialog" aria-modal="true" aria-labelledby="breakTitle">
+    <h2 id="breakTitle">Break time</h2>
+    <div id="breakNudge" class="stale-nudge" style="display:none;"></div>
+    <p id="breakPrompt" class="prompt">Stand up. Walk outside for 3 minutes. No phone.</p>
+    <div id="breakContacts" class="contact-row" style="justify-content:center; margin-bottom:14px;"></div>
+    <div class="actions">
+      <button id="breakDone" class="primary">Done — back to work</button>
+      <button id="breakSkip" class="ghost">Skip</button>
+      <button id="breakAnother" class="ghost">Another idea</button>
+    </div>
+    <div class="small" style="margin-top:14px;">
+      You sit at a desk all day. The break is the point — don't optimize it away.
+    </div>
+  </div>
+</div>
+
+<!-- CUTOFF overlay -->
+<div id="cutoffOverlay" class="overlay">
+  <div class="modal center" role="dialog" aria-modal="true" aria-labelledby="cutoffTitle">
+    <h2 id="cutoffTitle">You're done for today</h2>
+    <p class="prompt">It's past your end-of-day cutoff.<br>Close the laptop. Step outside. Find a human.</p>
+    <div id="cutoffContacts" class="contact-row" style="justify-content:center; margin-bottom:14px;"></div>
+    <div class="reflection-wrap">
+      <label for="reflectionInput" class="small" style="display:block; text-align:left; margin-bottom:6px;">One sentence — what went well today?</label>
+      <textarea id="reflectionInput" rows="2" placeholder="Optional. The tool remembers."></textarea>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button id="cutoffOk" class="primary">Save &amp; sign off</button>
+      <button id="cutoffSnooze30" class="ghost">Snooze 30m</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS overlay -->
+<div id="settingsOverlay" class="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <button class="icon-btn close" data-close="settings" aria-label="Close settings">✕</button>
+    <h2 id="settingsTitle">Settings</h2>
+
+    <h3>Outside alarm <span class="small">(fires regardless of timer)</span></h3>
+    <label><input type="checkbox" id="alarmEnabled" /> Remind me to get up &amp; outside</label>
+    <div class="row">
+      <span class="small">Every</span>
+      <input type="number" id="alarmInterval" min="15" max="240" step="5" style="width:80px;" />
+      <span class="small">minutes</span>
+    </div>
+
+    <h3>End-of-day cutoff</h3>
+    <label><input type="checkbox" id="cutoffEnabled" /> Nag me to stop working</label>
+    <div class="row">
+      <span class="small">at</span>
+      <input type="time" id="cutoffTime" />
+    </div>
+
+    <h3>Contacts <span class="small">(text/call shortcuts)</span></h3>
+    <div id="contactsList"></div>
+    <button id="addContactBtn" class="ghost" style="margin-top:6px; font-size:13px;">+ Add contact</button>
+
+    <h3>Notifications</h3>
+    <div class="row">
+      <span class="small">Browser notifications:</span>
+      <span id="notifStatus" class="small"><b style="color: var(--text);">unknown</b></span>
+      <button id="notifEnableBtn" class="ghost" style="font-size:13px; padding:6px 10px;">Enable</button>
+    </div>
+
+    <div class="actions" style="justify-content:flex-end; margin-top:18px;">
+      <button id="settingsDone" class="primary">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- WEEK overlay -->
+<div id="weekOverlay" class="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="weekTitle">
+    <button class="icon-btn close" data-close="week" aria-label="Close week view">✕</button>
+    <h2 id="weekTitle">This week</h2>
+    <p class="small">Focus blocks per day — last 7 days.</p>
+    <div class="week-grid" id="weekGrid"></div>
+    <div class="week-summary" id="weekSummary"></div>
+    <div class="reflections-list" id="reflectionsList"></div>
+    <div class="actions" style="justify-content:flex-end; margin-top:18px;">
+      <button data-close="week" class="primary">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  // --- state ---
+  const state = JSON.parse(localStorage.getItem('onething.v2') || '{}');
+  // migrate from v1 if present
+  if (!Object.keys(state).length) {
+    const v1 = JSON.parse(localStorage.getItem('onething.v1') || '{}');
+    Object.assign(state, v1);
+  }
+  let today = new Date().toISOString().slice(0,10);
+  state.history ??= {}; // { 'YYYY-MM-DD': {focusBlocks, breaks, minutes} }
+  if (state.date !== today) {
+    state.date = today;
+    state.streak = 0;
+    state.lastBreakAt = null;
+    state.lastStoodAt = null;
+    state.cutoffSnoozedUntil = null;
+    state.cutoffTriggeredAt = null;
+  }
+  state.task ??= '';
+  state.duration ??= 25;
+  state.parkList ??= [];
+  state.energy ??= null;
+  state.contacts ??= [];
+  state.alarm ??= { enabled: false, intervalMin: 90 };
+  state.cutoff ??= { enabled: false, time: '17:30' };
+  state.ambient ??= { type: 'off', volume: 0.08 };
+  // ambient doesn't auto-resume — browsers block autoplay; user must click
+  state.ambient.type = 'off';
+  state.alarmLastFiredAt ??= null;
+  state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+
+  const save = () => localStorage.setItem('onething.v2', JSON.stringify(state));
+
+  function recordFocusBlock(minutes) {
+    state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+    state.history[today].focusBlocks += 1;
+    state.history[today].minutes += (minutes || 0);
+  }
+  function recordBreak() {
+    state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+    state.history[today].breaks += 1;
+  }
+
+  // --- timer ---
+  let endsAt = null;
+  let remaining = state.duration * 60;
+  let mode = 'focus';
+  let tickHandle = null;
+
+  function fmt(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function render() {
+    const timerEl = $('timer');
+    let secLeft;
+    if (endsAt) secLeft = (endsAt - Date.now()) / 1000;
+    else secLeft = remaining;
+
+    timerEl.textContent = fmt(secLeft);
+    const isRunning = !!endsAt && mode === 'focus' && secLeft > 0;
+    const isBreak   = !!endsAt && mode === 'break' && secLeft > 0;
+    const isOver    = secLeft <= 0 && !!endsAt;
+    timerEl.classList.toggle('running', isRunning);
+    timerEl.classList.toggle('break',   isBreak);
+    timerEl.classList.toggle('over',    isOver);
+
+    // progress bar
+    const track = $('progressTrack');
+    const fill = $('progressFill');
+    if (track && fill) {
+      const totalSec = state.duration * 60;
+      const elapsedSec = endsAt ? Math.max(0, totalSec - secLeft) : (totalSec - remaining);
+      const pct = Math.max(0, Math.min(100, (elapsedSec / totalSec) * 100));
+      fill.style.width = pct + '%';
+      track.classList.toggle('active', !!endsAt || (remaining < state.duration * 60 && remaining > 0));
+      track.classList.toggle('break', isBreak);
+      track.classList.toggle('over', isOver);
+    }
+
+    $('startBtn').hidden = !!endsAt;
+    $('pauseBtn').hidden = !endsAt;
+
+    if (endsAt && secLeft <= 0) onTimerEnd();
+
+    document.title = (endsAt ? (mode==='break'?'☕ ':'● ') : '○ ') + fmt(secLeft) + ' — One Thing';
+  }
+
+  function start() {
+    if (endsAt) return;
+    endsAt = Date.now() + remaining * 1000;
+    if (!tickHandle) tickHandle = setInterval(render, 250);
+    render();
+  }
+  function pause() {
+    if (!endsAt) return;
+    remaining = Math.max(0, (endsAt - Date.now()) / 1000);
+    endsAt = null;
+    render();
+  }
+  function reset(toMin = state.duration) {
+    endsAt = null;
+    mode = 'focus';
+    remaining = toMin * 60;
+    render();
+  }
+
+  function onTimerEnd() {
+    endsAt = null;
+    if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+    try { beep(); } catch(_) {}
+    if (mode === 'focus') {
+      state.streak = (state.streak||0) + 1;
+      recordFocusBlock(state.duration);
+      save();
+      setStreak(state.streak);
+      notify('Focus block done', 'Time to stand up and step outside.');
+      openBreak();
+    } else {
+      remaining = state.duration * 60;
+      mode = 'focus';
+      render();
+    }
+  }
+
+  function beep() {
+    const ctx = ensureAudio();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = 660; g.gain.value = 0.0001;
+    g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+    o.start(); o.stop(ctx.currentTime + 0.6);
+  }
+
+  // --- ambient sound engine (synthesized, no external assets) ---
+  let audioCtx = null;
+  let ambientNodes = null; // { src, gain, ... }
+
+  function ensureAudio() {
+    if (audioCtx) return audioCtx;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  function makeNoiseBuffer(ctx, type) {
+    const seconds = 4;
+    const buf = ctx.createBuffer(1, seconds * ctx.sampleRate, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    if (type === 'white') {
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.5;
+    } else if (type === 'pink') {
+      // Voss-McCartney pink noise
+      let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+      for (let i = 0; i < d.length; i++) {
+        const w = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + w * 0.0555179;
+        b1 = 0.99332 * b1 + w * 0.0750759;
+        b2 = 0.96900 * b2 + w * 0.1538520;
+        b3 = 0.86650 * b3 + w * 0.3104856;
+        b4 = 0.55000 * b4 + w * 0.5329522;
+        b5 = -0.7616 * b5 - w * 0.0168980;
+        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+        b6 = w * 0.115926;
+      }
+    } else if (type === 'brown' || type === 'rain') {
+      // brown noise via leaky integrator; rain = brown + slight HF flecks
+      let last = 0;
+      for (let i = 0; i < d.length; i++) {
+        const w = Math.random() * 2 - 1;
+        last = (last + 0.02 * w) / 1.02;
+        d[i] = last * 3.5;
+        if (type === 'rain' && Math.random() < 0.0008) {
+          d[i] += (Math.random() * 2 - 1) * 0.4;
+        }
+      }
+    }
+    return buf;
+  }
+
+  function startAmbient(type) {
+    stopAmbient();
+    if (!type || type === 'off') return;
+    const ctx = ensureAudio();
+    if (ctx.state === 'suspended') ctx.resume();
+    const src = ctx.createBufferSource();
+    src.buffer = makeNoiseBuffer(ctx, type);
+    src.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    // soft low-pass for warmth, esp. on white
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = type === 'white' ? 8000 : (type === 'pink' ? 6000 : 1800);
+    src.connect(lp).connect(gain).connect(ctx.destination);
+    src.start();
+    // fade in to avoid click
+    gain.gain.linearRampToValueAtTime(state.ambient.volume, ctx.currentTime + 0.4);
+    ambientNodes = { src, gain, lp };
+  }
+
+  function stopAmbient() {
+    if (!ambientNodes) return;
+    const { src, gain } = ambientNodes;
+    try {
+      const ctx = audioCtx;
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+      setTimeout(() => { try { src.stop(); } catch(_) {} }, 280);
+    } catch(_) { try { src.stop(); } catch(_) {} }
+    ambientNodes = null;
+  }
+
+  function setAmbientVolume(v) {
+    state.ambient.volume = v;
+    if (ambientNodes) {
+      ambientNodes.gain.gain.linearRampToValueAtTime(v, audioCtx.currentTime + 0.1);
+    }
+  }
+
+  function notify(title, body) {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+    try { new Notification(title, { body }); } catch(_) {}
+  }
+
+  // --- breaks (time-of-day aware) ---
+  const breakPromptsAnytime = [
+    "Step outside for 3 minutes. Feel the air on your face. No phone.",
+    "Walk to the furthest window in the building and look at the horizon for 60 seconds.",
+    "Text or call one human who isn't a coworker. One sentence is enough.",
+    "Stand up, stretch your arms overhead, then walk a full lap of wherever you are.",
+    "Go refill your water from the furthest tap. Take the long way back.",
+    "Go outside and stand in the sun (or rain) for two minutes. Don't check your phone.",
+    "Walk around the block. If there's no block, walk for 5 minutes in any direction.",
+    "Find a coworker or housemate and say hi. Ask one real question.",
+    "Put on a song you love. Stand up. Move to it. Whole song, not 20 seconds.",
+    "Eyes off the screen — look at something at least 20 feet away for 60 seconds.",
+    "Make a hot drink slowly. Don't multitask. Just make the drink.",
+    "Step outside and name 3 things you can hear. Then come back."
+  ];
+  const breakPromptsByTime = {
+    morning: [
+      "Step outside. The morning air is the freshest it'll be all day.",
+      "Walk to the nearest tree. Look up at it for 60 seconds.",
+      "Make a real breakfast or a real coffee. Slowly. Don't multitask.",
+      "Send one good-morning text to someone who'd appreciate it."
+    ],
+    afternoon: [
+      "Walk in the sun for 5 minutes. Get vitamin D before it sets.",
+      "Go outside and look as far as your eyes can see.",
+      "Find someone nearby and ask them how their day is going.",
+      "Take a 10-minute walk to anywhere — the goal is just movement."
+    ],
+    evening: [
+      "Step outside. Notice the light — it changes fastest right now.",
+      "Make dinner with someone, or call someone while you make it.",
+      "Walk around the block before the day fully ends.",
+      "Watch the sunset. Even 30 seconds of it is the right amount."
+    ],
+    late: [
+      "If you're still working, that's the sign — one more lap and stop.",
+      "Step outside for a minute. Look at the sky. Let your eyes adjust.",
+      "Stretch. Drink water. The day is over.",
+      "Text one person goodnight if it'd make their evening better."
+    ]
+  };
+  function timeOfDayBucket() {
+    const h = new Date().getHours();
+    if (h < 5)        return 'late';
+    if (h < 12)       return 'morning';
+    if (h < 17)       return 'afternoon';
+    if (h < 21)       return 'evening';
+    return 'late';
+  }
+  let lastBreakPrompt = null;
+  function pickBreak() {
+    const bucket = timeOfDayBucket();
+    const pool = [...breakPromptsAnytime, ...(breakPromptsByTime[bucket] || [])];
+    let pick;
+    let attempts = 0;
+    do {
+      pick = pool[Math.floor(Math.random() * pool.length)];
+      attempts++;
+    } while (pick === lastBreakPrompt && pool.length > 1 && attempts < 10);
+    lastBreakPrompt = pick;
+    return pick;
+  }
+
+  function openBreak(reason = 'block-done') {
+    mode = 'break';
+    $('breakTitle').textContent = reason === 'alarm' ? 'Outside alarm' : 'Break time';
+    $('breakPrompt').textContent = pickBreak();
+    // surface stalest-contact nudge above the random prompt when applicable
+    const nudgeEl = $('breakNudge');
+    const stale = stalestContact(2);
+    if (stale && nudgeEl) {
+      const days = Math.round(staleDays(stale));
+      nudgeEl.textContent = `You haven't reached out to ${stale.name} in ${isFinite(days) ? days + ' days' : 'a while'}.`;
+      nudgeEl.style.display = 'block';
+    } else if (nudgeEl) {
+      nudgeEl.style.display = 'none';
+    }
+    renderBreakContacts();
+    $('overlay').classList.add('show');
+  }
+  function closeBreak() {
+    if (!$('overlay').classList.contains('show')) return;
+    $('overlay').classList.remove('show');
+    state.lastBreakAt = Date.now();
+    recordBreak();
+    save();
+    updateLastBreak();
+    remaining = state.duration * 60;
+    mode = 'focus';
+    render();
+  }
+
+  function updateLastBreak() {
+    if (!state.lastBreakAt) { $('lastBreak').textContent = '—'; return; }
+    const mins = Math.round((Date.now() - state.lastBreakAt) / 60000);
+    $('lastBreak').textContent = mins < 1 ? 'just now' : mins + 'm ago';
+  }
+  function updateLastStood() {
+    if (!state.lastStoodAt) { $('lastStood').textContent = '—'; return; }
+    const mins = Math.round((Date.now() - state.lastStoodAt) / 60000);
+    $('lastStood').textContent = mins < 1 ? 'just now' : mins + 'm ago';
+  }
+  setInterval(() => { updateLastBreak(); updateLastStood(); }, 30000);
+
+  // --- contacts rendering ---
+  function contactHref(c) {
+    const num = (c.phone || '').replace(/[^+\d]/g, '');
+    return c.type === 'call' ? `tel:${num}` : `sms:${num}`;
+  }
+  function contactGlyph(c) { return c.type === 'call' ? '📞' : '💬'; }
+  function staleDays(c) {
+    if (!c.lastReachedAt) return Infinity;
+    return (Date.now() - c.lastReachedAt) / (24 * 3600 * 1000);
+  }
+  function relTime(ts) {
+    if (!ts) return 'never';
+    const ms = Date.now() - ts;
+    const days = ms / (24 * 3600 * 1000);
+    if (days < 1) {
+      const hrs = ms / (3600 * 1000);
+      if (hrs < 1) {
+        const mins = Math.round(ms / 60000);
+        return mins < 1 ? 'just now' : mins + 'm ago';
+      }
+      return Math.round(hrs) + 'h ago';
+    }
+    return Math.round(days) + 'd ago';
+  }
+  function stalestContact(thresholdDays = 2) {
+    if (!state.contacts.length) return null;
+    const sorted = [...state.contacts].sort((a,b) => staleDays(b) - staleDays(a));
+    const top = sorted[0];
+    return staleDays(top) >= thresholdDays ? top : null;
+  }
+  function renderContactRow(container) {
+    container.innerHTML = '';
+    if (!state.contacts.length) {
+      const e = document.createElement('div');
+      e.className = 'contact-empty';
+      e.textContent = 'Add contacts in ⚙ to get one-tap text/call buttons.';
+      container.appendChild(e);
+      return;
+    }
+    // sort stalest-first so the person you've ignored longest is most prominent
+    const sorted = [...state.contacts].sort((a,b) => staleDays(b) - staleDays(a));
+    sorted.forEach(c => {
+      const a = document.createElement('a');
+      const stale = staleDays(c) >= 2 && c.lastReachedAt;
+      const never = !c.lastReachedAt;
+      a.className = 'contact-btn ' + (c.type === 'call' ? 'call' : 'text') + (stale ? ' stale' : '');
+      a.href = contactHref(c);
+      const since = c.lastReachedAt ? `<span class="since">${relTime(c.lastReachedAt)}</span>` : '';
+      a.innerHTML = `<span class="glyph">${contactGlyph(c)}</span> ${c.type === 'call' ? 'Call' : 'Text'} ${escapeHtml(c.name)}${since}`;
+      a.addEventListener('click', () => {
+        // mark intent — even if the user doesn't actually send, the gesture itself counts
+        const idx = state.contacts.findIndex(x => x === c || (x.name === c.name && x.phone === c.phone));
+        if (idx >= 0) {
+          state.contacts[idx].lastReachedAt = Date.now();
+          save();
+          // re-render all contact rows so timestamps stay in sync
+          renderBodyContacts();
+        }
+      });
+      container.appendChild(a);
+    });
+  }
+  function renderBodyContacts()   { renderContactRow($('bodyContacts')); }
+  function renderBreakContacts()  { renderContactRow($('breakContacts')); }
+  function renderCutoffContacts() { renderContactRow($('cutoffContacts')); }
+
+  function escapeHtml(s){return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+  // --- outside alarm ---
+  function alarmTick() {
+    if (!state.alarm.enabled) return;
+    if (anyOverlayOpen()) return; // don't stack
+    const interval = (state.alarm.intervalMin || 90) * 60 * 1000;
+    const last = state.alarmLastFiredAt || state.lastBreakAt || Date.now();
+    if (Date.now() - last >= interval) {
+      state.alarmLastFiredAt = Date.now();
+      save();
+      notify('Outside alarm', 'Stand up. Step outside.');
+      openBreak('alarm');
+    }
+  }
+  setInterval(alarmTick, 30 * 1000);
+
+  // --- end-of-day cutoff ---
+  function cutoffTick() {
+    const banner = $('cutoffBanner');
+    if (!state.cutoff.enabled) { banner.classList.remove('show'); return; }
+    const [h, m] = (state.cutoff.time || '17:30').split(':').map(Number);
+    const now = new Date();
+    const cutoff = new Date(); cutoff.setHours(h, m, 0, 0);
+    const past = now >= cutoff;
+    const snoozed = state.cutoffSnoozedUntil && Date.now() < state.cutoffSnoozedUntil;
+    if (past && !snoozed) {
+      banner.classList.add('show');
+      // pop modal once per day on first cross
+      if (!state.cutoffTriggeredAt || new Date(state.cutoffTriggeredAt).toDateString() !== now.toDateString()) {
+        state.cutoffTriggeredAt = Date.now();
+        save();
+        if (!anyOverlayOpen()) {
+          renderCutoffContacts();
+          $('cutoffOverlay').classList.add('show');
+          notify('End of day', 'Time to stop working. Go outside.');
+        }
+      }
+    } else {
+      banner.classList.remove('show');
+    }
+  }
+  setInterval(cutoffTick, 30 * 1000);
+
+  function anyOverlayOpen() {
+    return ['overlay','cutoffOverlay','settingsOverlay','weekOverlay'].some(id => $(id).classList.contains('show'));
+  }
+
+  // --- streak counter helper with pop animation on increment ---
+  function setStreak(n) {
+    const el = $('streakCount');
+    if (!el) return;
+    const prev = Number(el.textContent) || 0;
+    el.textContent = n;
+    if (n > prev) {
+      el.classList.remove('pop');
+      // force reflow so animation re-triggers
+      void el.offsetWidth;
+      el.classList.add('pop');
+      setTimeout(() => el.classList.remove('pop'), 700);
+    }
+  }
+
+  // --- midnight rollover (catches tabs left open past midnight) ---
+  function checkDateRollover() {
+    const todayNow = new Date().toISOString().slice(0,10);
+    if (todayNow === today) return;
+    // day flipped — reset daily state, preserve history
+    today = todayNow;
+    state.date = todayNow;
+    state.streak = 0;
+    state.lastBreakAt = null;
+    state.lastStoodAt = null;
+    state.cutoffSnoozedUntil = null;
+    state.cutoffTriggeredAt = null;
+    state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+    save();
+    // refresh UI to reflect the new day
+    $('streakCount').textContent = 0; // rollover reset, no pop
+    if (typeof updateLastBreak === 'function') updateLastBreak();
+    if (typeof updateLastStood === 'function') updateLastStood();
+    if (typeof updateGreeting === 'function') updateGreeting();
+    if (typeof renderIntention === 'function') renderIntention();
+    if (typeof cutoffTick === 'function') cutoffTick();
+    // brief notification so the user knows their day reset
+    if (typeof notify === 'function') notify('New day', 'Stats reset. Yesterday\'s blocks are saved in the week view.');
+  }
+  setInterval(checkDateRollover, 60 * 1000);
+
+  // --- focus management for accessibility ---
+  // observes .show class on every overlay; on open, focus first focusable inside
+  // and remember the trigger; on close, restore focus to the trigger.
+  ['overlay', 'cutoffOverlay', 'settingsOverlay', 'weekOverlay'].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    let wasShown = false;
+    let returnFocusEl = null;
+    const obs = new MutationObserver(muts => {
+      for (const m of muts) {
+        if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
+        const isShown = el.classList.contains('show');
+        if (isShown && !wasShown) {
+          returnFocusEl = document.activeElement;
+          setTimeout(() => {
+            const focusable = el.querySelector(
+              'input:not([type=hidden]):not([disabled]), textarea:not([disabled]), button:not([disabled]):not(.close), [href], select:not([disabled])'
+            ) || el.querySelector('button:not([disabled])');
+            if (focusable) try { focusable.focus({ preventScroll: true }); } catch(_) {}
+          }, 60);
+        } else if (!isShown && wasShown) {
+          if (returnFocusEl && typeof returnFocusEl.focus === 'function') {
+            setTimeout(() => { try { returnFocusEl.focus(); } catch(_) {} }, 240);
+          }
+        }
+        wasShown = isShown;
+      }
+    });
+    obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+  });
+
+  // --- morning intention (bookends evening reflection) ---
+  function renderIntention() {
+    const strip = $('intentionStrip');
+    if (!strip) return;
+    const todayHist = state.history[today] || {};
+    const intention = todayHist.intention;
+    const hour = new Date().getHours();
+    // logic: show if set, OR if before 2pm and not set
+    if (intention) {
+      strip.className = 'intention-strip set';
+      strip.style.display = '';
+      strip.innerHTML = `
+        <span class="sun">☀</span>
+        <span class="label">Today</span>
+        <span class="text">"${escapeHtml(intention)}"</span>
+        <button class="edit-btn" id="intentionEdit">edit</button>
+      `;
+      $('intentionEdit').onclick = () => promptIntention(intention);
+    } else if (hour < 14) {
+      promptIntention('');
+    } else {
+      strip.style.display = 'none';
+    }
+  }
+
+  function promptIntention(initial) {
+    const strip = $('intentionStrip');
+    strip.className = 'intention-strip empty';
+    strip.style.display = '';
+    strip.innerHTML = `
+      <span class="sun">☀</span>
+      <span class="label">What do you want today to feel like?</span>
+      <input type="text" id="intentionInput" placeholder="one sentence" maxlength="80" />
+      <button class="primary" id="intentionSave">Set</button>
+    `;
+    const input = $('intentionInput');
+    input.value = initial || '';
+    input.focus();
+    const submit = () => {
+      const v = input.value.trim();
+      if (!v) {
+        // dismiss strip if blank
+        strip.style.display = 'none';
+        return;
+      }
+      state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+      state.history[today].intention = v;
+      save();
+      renderIntention();
+    };
+    $('intentionSave').onclick = submit;
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  }
+
+  // --- time-of-day greeting (anchors ADHD time-blindness) ---
+  function updateGreeting() {
+    const el = $('greeting');
+    if (!el) return;
+    const now = new Date();
+    const h = now.getHours();
+    let greet;
+    if (h < 5)        greet = "Up late";
+    else if (h < 12)  greet = "Good morning";
+    else if (h < 17)  greet = "Good afternoon";
+    else if (h < 21)  greet = "Good evening";
+    else              greet = "Wind down";
+
+    let ctx = '';
+    let cls = '';
+    if (state.cutoff.enabled) {
+      const [ch, cm] = (state.cutoff.time || '17:30').split(':').map(Number);
+      const cutoff = new Date(); cutoff.setHours(ch, cm, 0, 0);
+      const diffMs = cutoff - now;
+      if (diffMs <= 0) {
+        ctx = 'past cutoff — log off';
+        cls = 'warn';
+      } else {
+        const mins = Math.round(diffMs / 60000);
+        if (mins < 60) {
+          ctx = `${mins}m until cutoff`;
+          cls = 'warn';
+        } else {
+          const hrs = Math.floor(mins / 60);
+          const rem = mins % 60;
+          ctx = rem ? `${hrs}h ${rem}m until cutoff` : `${hrs}h until cutoff`;
+          cls = hrs <= 2 ? '' : 'cool';
+        }
+      }
+    } else {
+      // gentle nudge based on hour even without cutoff
+      if (h >= 17) ctx = 'consider wrapping up soon';
+      else if (h < 12) ctx = 'fresh start';
+      else ctx = '';
+    }
+
+    el.classList.remove('warn', 'cool');
+    if (cls) el.classList.add(cls);
+    el.innerHTML = ctx ? `${greet} · <span class="ctx">${ctx}</span>` : greet + '.';
+  }
+  setInterval(updateGreeting, 30 * 1000);
+
+  // --- settings ---
+  function openSettings() {
+    $('alarmEnabled').checked = !!state.alarm.enabled;
+    $('alarmInterval').value = state.alarm.intervalMin || 90;
+    $('cutoffEnabled').checked = !!state.cutoff.enabled;
+    $('cutoffTime').value = state.cutoff.time || '17:30';
+    renderContactsList();
+    refreshNotifStatus();
+    $('settingsOverlay').classList.add('show');
+  }
+  function closeSettings() {
+    state.alarm.enabled = $('alarmEnabled').checked;
+    state.alarm.intervalMin = Math.max(15, Math.min(240, Number($('alarmInterval').value) || 90));
+    state.cutoff.enabled = $('cutoffEnabled').checked;
+    state.cutoff.time = $('cutoffTime').value || '17:30';
+    save();
+    $('settingsOverlay').classList.remove('show');
+    renderBodyContacts();
+    cutoffTick();
+    updateGreeting();
+  }
+
+  function renderContactsList() {
+    const wrap = $('contactsList');
+    wrap.innerHTML = '';
+    state.contacts.forEach((c, idx) => {
+      const row = document.createElement('div');
+      row.className = 'contact-edit-row';
+      row.innerHTML = `
+        <input type="text" placeholder="Name" value="${escapeHtml(c.name)}" data-i="${idx}" data-k="name" />
+        <input type="tel" placeholder="Phone" value="${escapeHtml(c.phone)}" data-i="${idx}" data-k="phone" />
+        <select data-i="${idx}" data-k="type">
+          <option value="text"${c.type==='text'?' selected':''}>Text</option>
+          <option value="call"${c.type==='call'?' selected':''}>Call</option>
+        </select>
+        <button class="icon-btn" data-rm="${idx}" title="Remove">✕</button>
+      `;
+      wrap.appendChild(row);
+    });
+    wrap.querySelectorAll('input, select').forEach(el => {
+      el.addEventListener('input', e => {
+        const i = +e.target.dataset.i;
+        const k = e.target.dataset.k;
+        state.contacts[i][k] = e.target.value;
+        save();
+      });
+    });
+    wrap.querySelectorAll('[data-rm]').forEach(b => {
+      b.addEventListener('click', e => {
+        const i = +e.currentTarget.dataset.rm;
+        state.contacts.splice(i, 1);
+        save();
+        renderContactsList();
+        renderBodyContacts();
+      });
+    });
+  }
+
+  $('addContactBtn').onclick = () => {
+    state.contacts.push({ name: '', phone: '', type: 'text' });
+    save();
+    renderContactsList();
+  };
+
+  function refreshNotifStatus() {
+    const el = $('notifStatus');
+    if (typeof Notification === 'undefined') {
+      el.innerHTML = '<b style="color:var(--muted);">unsupported</b>';
+      $('notifEnableBtn').disabled = true;
+      return;
+    }
+    const p = Notification.permission;
+    const color = p === 'granted' ? 'var(--accent-2)' : (p === 'denied' ? 'var(--warn)' : 'var(--accent)');
+    el.innerHTML = `<b style="color:${color};">${p}</b>`;
+    $('notifEnableBtn').disabled = (p === 'granted' || p === 'denied');
+  }
+  $('notifEnableBtn').onclick = async () => {
+    if (typeof Notification === 'undefined') return;
+    try { await Notification.requestPermission(); } catch(_) {}
+    refreshNotifStatus();
+  };
+
+  // --- weekly look-back ---
+  function openWeek() {
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0,10);
+      const h = state.history[key] || { focusBlocks: 0, breaks: 0, minutes: 0 };
+      days.push({ key, date: d, ...h });
+    }
+    const max = Math.max(1, ...days.map(d => d.focusBlocks));
+    const grid = $('weekGrid');
+    grid.innerHTML = '';
+    days.forEach(d => {
+      const isToday = d.key === today;
+      const col = document.createElement('div');
+      col.className = 'week-col' + (isToday ? ' today' : '');
+      const h = (d.focusBlocks / max) * 100;
+      col.innerHTML = `
+        <div class="day-count">${d.focusBlocks}</div>
+        <div class="week-bar-wrap"><div class="week-bar" style="height:${h}%"></div></div>
+        <div class="day-label">${d.date.toLocaleDateString(undefined, { weekday: 'short' })}</div>
+      `;
+      grid.appendChild(col);
+    });
+    const totalBlocks = days.reduce((s,d)=>s+d.focusBlocks,0);
+    const totalMin = days.reduce((s,d)=>s+d.minutes,0);
+    const totalBreaks = days.reduce((s,d)=>s+d.breaks,0);
+    const best = days.reduce((b,d)=> d.focusBlocks>b.focusBlocks?d:b, days[0]);
+    $('weekSummary').innerHTML = `
+      <span><b>${totalBlocks}</b> blocks</span>
+      <span><b>${Math.round(totalMin/60*10)/10}h</b> focused</span>
+      <span><b>${totalBreaks}</b> breaks</span>
+      <span>best day: <b>${best.date.toLocaleDateString(undefined,{weekday:'long'})}</b> (${best.focusBlocks})</span>
+    `;
+    // intentions + reflections list (intent in the morning, reflect at night)
+    const dayEntries = days
+      .filter(d => state.history[d.key]?.reflection || state.history[d.key]?.intention)
+      .map(d => ({
+        date: d.date,
+        key: d.key,
+        intention: state.history[d.key].intention,
+        reflection: state.history[d.key].reflection
+      }));
+    const rl = $('reflectionsList');
+    if (rl) {
+      if (!dayEntries.length) {
+        rl.innerHTML = '<h4>Intentions &amp; reflections</h4><div class="reflection-empty">Set a morning intention or save an end-of-day reflection — they\'ll show up here.</div>';
+      } else {
+        rl.innerHTML = '<h4>Intentions &amp; reflections</h4>' + dayEntries.map(r => {
+          const lines = [];
+          if (r.intention) lines.push(`<div class="text" style="color:var(--accent-2); font-style:normal;">☀ ${escapeHtml(r.intention)}</div>`);
+          if (r.reflection) lines.push(`<div class="text">${escapeHtml(r.reflection)}</div>`);
+          return `<div class="reflection-item"><span class="day">${r.date.toLocaleDateString(undefined,{weekday:'short'})}</span><div>${lines.join('')}</div></div>`;
+        }).join('');
+      }
+    }
+    $('weekOverlay').classList.add('show');
+  }
+
+  // --- wiring ---
+  $('startBtn').onclick = start;
+  $('pauseBtn').onclick = pause;
+  $('resetBtn').onclick = () => reset();
+  $('doneBtn').onclick = () => {
+    if (mode !== 'focus') return;
+    state.streak = (state.streak||0) + 1;
+    // best-effort minutes recorded as portion completed
+    const elapsed = endsAt ? (state.duration*60 - Math.max(0, (endsAt - Date.now())/1000)) : (state.duration*60 - remaining);
+    recordFocusBlock(Math.round(elapsed/60));
+    save();
+    setStreak(state.streak);
+    const banner = $('doneBanner');
+    banner.textContent = '✓ Logged. Take the break — that\'s the deal.';
+    banner.classList.add('show');
+    setTimeout(() => banner.classList.remove('show'), 4000);
+    if (endsAt) pause();
+    openBreak();
+  };
+  $('breakDone').onclick = closeBreak;
+  $('breakSkip').onclick = closeBreak;
+  $('breakAnother').onclick = () => $('breakPrompt').textContent = pickBreak();
+
+  $('cutoffOk').onclick = () => {
+    const text = $('reflectionInput').value.trim();
+    if (text) {
+      state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+      state.history[today].reflection = text;
+      save();
+    }
+    $('cutoffOverlay').classList.remove('show');
+  };
+  // pre-fill reflection if already saved today
+  const _existingRefl = state.history[today]?.reflection;
+  if (_existingRefl) $('reflectionInput').value = _existingRefl;
+  $('cutoffSnooze30').onclick = () => {
+    state.cutoffSnoozedUntil = Date.now() + 30 * 60 * 1000;
+    save();
+    $('cutoffOverlay').classList.remove('show');
+    cutoffTick();
+  };
+  $('cutoffSnooze').onclick = () => {
+    state.cutoffSnoozedUntil = Date.now() + 30 * 60 * 1000;
+    save();
+    cutoffTick();
+  };
+
+  $('settingsBtn').onclick = openSettings;
+  $('settingsDone').onclick = closeSettings;
+  $('weekBtn').onclick = openWeek;
+
+  document.querySelectorAll('[data-close]').forEach(el => {
+    el.addEventListener('click', () => {
+      const which = el.dataset.close;
+      if (which === 'settings') closeSettings();
+      if (which === 'week')     $('weekOverlay').classList.remove('show');
+    });
+  });
+
+  $('taskInput').value = state.task;
+  const syncTaskEmpty = () => $('taskInput').classList.toggle('is-empty', !$('taskInput').value.trim());
+  syncTaskEmpty();
+  $('taskInput').addEventListener('input', e => { state.task = e.target.value; save(); syncTaskEmpty(); });
+
+  document.querySelectorAll('#durationPills button').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.min) === state.duration);
+    b.onclick = () => {
+      state.duration = Number(b.dataset.min);
+      save();
+      document.querySelectorAll('#durationPills button').forEach(x =>
+        x.classList.toggle('active', Number(x.dataset.min) === state.duration));
+      if (!endsAt && mode === 'focus') reset(state.duration);
+    };
+  });
+
+  // brain dump
+  function renderPark(animateFirst = false) {
+    const ul = $('parkList');
+    ul.innerHTML = '';
+    state.parkList.forEach((item, idx) => {
+      const li = document.createElement('li');
+      if (animateFirst && idx === 0) li.classList.add('entering');
+      const span = document.createElement('span');
+      span.textContent = item;
+      const x = document.createElement('button');
+      x.className = 'x';
+      x.textContent = '×';
+      x.onclick = () => { state.parkList.splice(idx,1); save(); renderPark(); };
+      li.appendChild(span); li.appendChild(x);
+      ul.appendChild(li);
+    });
+    // empty state visibility
+    const empty = $('parkEmpty');
+    if (empty) empty.classList.toggle('hidden', state.parkList.length > 0);
+  }
+  $('parkInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.value.trim()) {
+      state.parkList.unshift(e.target.value.trim());
+      e.target.value = '';
+      save(); renderPark(true);
+    }
+  });
+  renderPark();
+
+  // energy
+  document.querySelectorAll('#energyRow button').forEach(b => {
+    b.classList.toggle('active', state.energy === b.dataset.e);
+    b.onclick = () => {
+      state.energy = b.dataset.e; save();
+      document.querySelectorAll('#energyRow button').forEach(x =>
+        x.classList.toggle('active', state.energy === x.dataset.e));
+    };
+  });
+
+  $('standBtn').onclick = () => { state.lastStoodAt = Date.now(); save(); updateLastStood(); };
+
+  // ambient sound wiring
+  document.querySelectorAll('#ambientRow button').forEach(b => {
+    b.classList.toggle('active', state.ambient.type === b.dataset.amb);
+    b.onclick = () => {
+      const t = b.dataset.amb;
+      state.ambient.type = t; save();
+      document.querySelectorAll('#ambientRow button').forEach(x =>
+        x.classList.toggle('active', state.ambient.type === x.dataset.amb));
+      startAmbient(t);
+    };
+  });
+  $('ambientVol').value = Math.round((state.ambient.volume || 0.08) * 100);
+  $('ambientVol').addEventListener('input', e => {
+    setAmbientVolume(Number(e.target.value) / 100);
+    save();
+  });
+
+  // keyboard
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if ($('overlay').classList.contains('show')) closeBreak();
+      else if ($('cutoffOverlay').classList.contains('show')) $('cutoffOverlay').classList.remove('show');
+      else if ($('settingsOverlay').classList.contains('show')) closeSettings();
+      else if ($('weekOverlay').classList.contains('show')) $('weekOverlay').classList.remove('show');
+    }
+    if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT'
+        && !anyOverlayOpen()) {
+      e.preventDefault();
+      endsAt ? pause() : start();
+    }
+  });
+
+  // initial render
+  $('streakCount').textContent = state.streak || 0; // no animation on initial paint
+  updateLastBreak(); updateLastStood();
+  renderBodyContacts();
+  reset(state.duration);
+  render();
+  cutoffTick();
+  updateGreeting();
+  renderIntention();
+})();
+</script>
+</body>
+</html>
