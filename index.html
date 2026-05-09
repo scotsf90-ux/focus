@@ -633,6 +633,23 @@
   /* simple checkbox styling */
   input[type=checkbox] { accent-color: var(--accent); }
 
+  /* ambient tree (grows with consistency) */
+  .tree {
+    position: fixed;
+    right: 8px;
+    bottom: 8px;
+    width: 140px;
+    height: 196px;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.78;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35));
+  }
+  @media (max-width: 600px) {
+    .tree { width: 92px; height: 130px; right: 4px; bottom: max(4px, env(safe-area-inset-bottom, 4px)); opacity: 0.65; }
+  }
+  @media (prefers-reduced-motion: reduce) { .tree { opacity: 0.5; } }
+
   /* streak counter delight pop on increment */
   @keyframes streakPop {
     0%   { transform: scale(1);   color: var(--text); }
@@ -690,6 +707,7 @@
 </style>
 </head>
 <body>
+<svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div class="app">
   <header>
     <div class="brand-block">
@@ -1001,6 +1019,7 @@
       recordFocusBlock(state.duration);
       save();
       setStreak(state.streak);
+      renderTree();
       notify('Focus block done', 'Time to stand up and step outside.');
       openBreak();
     } else {
@@ -1657,6 +1676,7 @@
     recordFocusBlock(Math.round(elapsed/60));
     save();
     setStreak(state.streak);
+    renderTree();
     const banner = $('doneBanner');
     banner.textContent = '✓ Logged. Take the break — that\'s the deal.';
     banner.classList.add('show');
@@ -1674,6 +1694,7 @@
       state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
       state.history[today].reflection = text;
       save();
+      renderTree(); // fruit appears
     }
     $('cutoffOverlay').classList.remove('show');
   };
@@ -1802,6 +1823,102 @@
   cutoffTick();
   updateGreeting();
   renderIntention();
+  renderTree();
+
+  // --- ambient tree (grows with consistency) ---
+  // Trunk always present. Branches scale with total focus blocks. Leaves bloom
+  // with last-7-day consistency. Fruit appears with saved reflections.
+  function computeTreeStats() {
+    const all = Object.values(state.history || {});
+    const totalBlocks = all.reduce((s, h) => s + (h.focusBlocks || 0), 0);
+    const reflections = all.filter(h => h && h.reflection).length;
+    // 7-day consistency: fraction of last 7 days with at least 1 block
+    let activeDays = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      const h = state.history[key];
+      if (h && (h.focusBlocks || 0) > 0) activeDays++;
+    }
+    const consistency = activeDays / 7; // 0..1
+    return { totalBlocks, reflections, consistency };
+  }
+
+  function renderTree() {
+    const svg = document.getElementById('tree');
+    if (!svg) return;
+    const { totalBlocks, reflections, consistency } = computeTreeStats();
+
+    // deterministic pseudo-random so tree is stable per stat configuration
+    let seed = totalBlocks * 31 + reflections * 7 + Math.round(consistency * 100);
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed % 1000) / 1000; };
+
+    const branches = Math.min(15, Math.floor(totalBlocks / 2));
+    const leavesPerBranch = Math.round(consistency * 5);
+    const fruits = Math.min(8, reflections);
+
+    const trunkColor = '#8a6c4a';
+    const branchColor = '#7a5e40';
+    const leafColor = 'var(--accent-2, #74e0a4)';
+    const fruitColor = 'var(--accent, #ffb84d)';
+
+    const parts = [];
+    // base ground hint
+    parts.push('<ellipse cx="50" cy="138" rx="28" ry="2" fill="rgba(0,0,0,0.25)" />');
+    // trunk: gentle S-curve from base up
+    parts.push(`<path d="M50 138 Q47 110 50 80 Q53 50 50 18" stroke="${trunkColor}" stroke-width="3.2" fill="none" stroke-linecap="round" />`);
+
+    // branch positions distributed up the trunk
+    const branchPlacements = [];
+    for (let i = 0; i < branches; i++) {
+      const tFromBottom = 0.18 + (i + 0.5) / 16 * 0.78; // 0.18..0.96 of trunk height (lower→top)
+      const y = 138 - tFromBottom * 120; // y in [18..114]
+      const dir = i % 2 === 0 ? 1 : -1;
+      const len = 11 + ((i * 7) % 5) + rnd() * 3;
+      const angleDeg = 28 + (i % 4) * 7 + rnd() * 6;
+      const angle = angleDeg * Math.PI / 180;
+      const x1 = 50 + dir * 1.5;
+      const y1 = y;
+      const cx = 50 + dir * len * 0.45;
+      const cy = y - len * 0.25;
+      const x2 = 50 + dir * len * Math.cos(angle);
+      const y2 = y - len * Math.sin(angle);
+      const w = Math.max(0.9, 2.2 - i * 0.08);
+      parts.push(`<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}" stroke="${branchColor}" stroke-width="${w.toFixed(2)}" fill="none" stroke-linecap="round" />`);
+      branchPlacements.push({ x2, y2, dir, len, angle });
+
+      // leaves along the branch
+      for (let j = 1; j <= leavesPerBranch; j++) {
+        const lt = j / (leavesPerBranch + 1) * 0.9 + 0.1;
+        const lx = 50 + dir * len * Math.cos(angle) * lt + (rnd() - 0.5) * 4;
+        const ly = y - len * Math.sin(angle) * lt + (rnd() - 0.5) * 3;
+        const r = 1.6 + rnd() * 0.9;
+        parts.push(`<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="${r.toFixed(1)}" fill="${leafColor}" opacity="${(0.55 + rnd() * 0.3).toFixed(2)}" />`);
+      }
+    }
+
+    // crown leaves at top of trunk (always a small bloom there if any leaves at all)
+    if (consistency > 0) {
+      const crownCount = Math.round(2 + consistency * 6);
+      for (let k = 0; k < crownCount; k++) {
+        const a = (k / crownCount) * Math.PI * 2;
+        const r = 5 + rnd() * 4;
+        const cx = 50 + Math.cos(a) * r;
+        const cy = 18 + Math.sin(a) * r * 0.7;
+        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(1.7 + rnd() * 0.8).toFixed(1)}" fill="${leafColor}" opacity="${(0.55 + rnd() * 0.3).toFixed(2)}" />`);
+      }
+    }
+
+    // fruit on outer branches
+    for (let i = 0; i < fruits; i++) {
+      const idx = (branchPlacements.length - 1) - i;
+      if (idx < 0) break;
+      const b = branchPlacements[idx];
+      parts.push(`<circle cx="${b.x2.toFixed(1)}" cy="${b.y2.toFixed(1)}" r="1.8" fill="${fruitColor}" opacity="0.9" />`);
+    }
+
+    svg.innerHTML = parts.join('');
+  }
 
   // --- time-of-day sky gradient (calm, drives body bg via CSS vars) ---
   // Each entry: hour, top color, mid color, bottom color. Linearly interpolated.
