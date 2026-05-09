@@ -668,6 +668,82 @@
   .ambient-help p:last-child { margin-bottom: 0; }
   .ambient-help em { color: var(--accent); font-style: normal; font-weight: 600; }
 
+  /* forest hill — grounds the tree in a green horizon line */
+  .hill {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 22vh;
+    max-height: 200px;
+    min-height: 100px;
+    pointer-events: none;
+    z-index: -1;
+    overflow: hidden;
+    opacity: 0.92;
+  }
+  .hill .hill-shape {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .hill .grass-band {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: 38%;
+    height: 14px;
+  }
+  .hill .grass-blade {
+    position: absolute;
+    bottom: 0;
+    width: 1.4px;
+    border-radius: 1px;
+    background: linear-gradient(to top, rgba(60,130,85,0) 0%, rgba(96,180,120,0.55) 70%, rgba(140,210,160,0.7) 100%);
+    transform-origin: 50% 100%;
+    animation: grassSway var(--p, 5s) ease-in-out infinite alternate;
+    animation-delay: var(--d, 0s);
+    will-change: transform;
+  }
+  @keyframes grassSway {
+    from { transform: rotate(-3deg); }
+    to   { transform: rotate(3deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hill .grass-blade { animation: none !important; transform: none !important; }
+  }
+  body.ambient-off .hill { display: none; }
+
+  /* seedling sprout-in animation (fires on render when totalBlocks=0) */
+  @keyframes stemGrow { from { stroke-dashoffset: 22; } to { stroke-dashoffset: 0; } }
+  @keyframes leafUnfurl { from { opacity: 0; transform: scale(0); } to { opacity: 0.85; transform: scale(1); } }
+  @keyframes glintIn { from { opacity: 0; } to { opacity: 0.4; } }
+  .seedling-stem {
+    stroke-dasharray: 22;
+    stroke-dashoffset: 22;
+    animation: stemGrow 1.2s cubic-bezier(.2,.7,.2,1) 0.2s forwards;
+  }
+  .seedling-leaf-l, .seedling-leaf-r {
+    opacity: 0;
+    transform-origin: 50px 124px;
+    transform: scale(0);
+    animation: leafUnfurl 0.75s cubic-bezier(.2,.7,.2,1) forwards;
+  }
+  .seedling-leaf-l { animation-delay: 1.05s; }
+  .seedling-leaf-r { animation-delay: 1.30s; }
+  .seedling-glint {
+    opacity: 0;
+    animation: glintIn 0.4s ease-out forwards;
+  }
+  .seedling-glint.s1 { animation-delay: 1.55s; }
+  .seedling-glint.s2 { animation-delay: 1.75s; }
+  @media (prefers-reduced-motion: reduce) {
+    .seedling-stem { stroke-dashoffset: 0 !important; animation: none !important; }
+    .seedling-leaf-l, .seedling-leaf-r { opacity: 0.85 !important; transform: none !important; animation: none !important; }
+    .seedling-glint { opacity: 0.4 !important; animation: none !important; }
+  }
+
   /* weather overlay — subtle particles tied to current weather */
   .weather-overlay {
     position: fixed;
@@ -848,6 +924,20 @@
 </head>
 <body>
 <div id="weatherOverlay" class="weather-overlay" aria-hidden="true"></div>
+<div id="hill" class="hill" aria-hidden="true">
+  <svg class="hill-shape" viewBox="0 0 100 30" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="hillGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#3a6a4a" stop-opacity="0.55" />
+        <stop offset="35%"  stop-color="#2a4d36" stop-opacity="0.78" />
+        <stop offset="70%"  stop-color="#1a2c22" stop-opacity="0.92" />
+        <stop offset="100%" stop-color="#0f1115" stop-opacity="1" />
+      </linearGradient>
+    </defs>
+    <path d="M 0 30 L 0 16 Q 18 10 35 13 Q 55 17 72 11 Q 88 7 100 12 L 100 30 Z" fill="url(#hillGrad)" />
+  </svg>
+  <div class="grass-band"></div>
+</div>
 <svg id="tree" class="tree" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div class="app">
   <header>
@@ -2230,10 +2320,33 @@
   updateGreeting();
   renderIntention();
   renderTree();
+  renderHill();
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
   applyAmbientLayers();
+
+  // --- forest hill: render grass blades along the band ---
+  function renderHill() {
+    const band = document.querySelector('.grass-band');
+    if (!band || band.dataset.rendered) return;
+    band.dataset.rendered = '1';
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const count = reduceMotion ? 14 : isMobile ? 18 : 32;
+    let s = 23;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
+    for (let i = 0; i < count; i++) {
+      const blade = document.createElement('div');
+      blade.className = 'grass-blade';
+      const xPct = (i / count) * 100 + (rnd() - 0.5) * 4;
+      blade.style.left = Math.max(0, Math.min(99, xPct)).toFixed(2) + '%';
+      blade.style.height = (7 + rnd() * 6).toFixed(1) + 'px';
+      blade.style.setProperty('--p', (3.5 + rnd() * 4).toFixed(1) + 's');
+      blade.style.setProperty('--d', (-rnd() * 5).toFixed(1) + 's');
+      band.appendChild(blade);
+    }
+  }
 
   // --- ambient layer toggle (off / sky / +weather / +tree=all) ---
   function applyAmbientLayers() {
@@ -2293,16 +2406,14 @@
     // base ground hint
     parts.push('<ellipse cx="50" cy="138" rx="28" ry="2" fill="rgba(0,0,0,0.25)" />');
 
-    // SEEDLING — first focus block hasn't happened yet. Show a small sprout.
+    // SEEDLING — first focus block hasn't happened yet. Show a small sprout
+    // that animates in: stem grows up, leaves unfurl, glints fade in.
     if (totalBlocks === 0) {
-      // tiny stem
-      parts.push(`<path d="M50 138 Q49 130 50 122" stroke="${trunkColor}" stroke-width="2" fill="none" stroke-linecap="round" />`);
-      // two cotyledon leaves curving outward
-      parts.push(`<path d="M50 124 Q44 120 40 124 Q44 126 50 124" fill="${leafColor}" opacity="0.85" />`);
-      parts.push(`<path d="M50 124 Q56 120 60 124 Q56 126 50 124" fill="${leafColor}" opacity="0.85" />`);
-      // little inner highlight on leaves so they look alive
-      parts.push(`<circle cx="44" cy="123.5" r="0.6" fill="rgba(255,255,255,0.4)" />`);
-      parts.push(`<circle cx="56" cy="123.5" r="0.6" fill="rgba(255,255,255,0.4)" />`);
+      parts.push(`<path class="seedling-stem" d="M50 138 Q49 130 50 122" stroke="${trunkColor}" stroke-width="2" fill="none" stroke-linecap="round" />`);
+      parts.push(`<path class="seedling-leaf-l" d="M50 124 Q44 120 40 124 Q44 126 50 124" fill="${leafColor}" />`);
+      parts.push(`<path class="seedling-leaf-r" d="M50 124 Q56 120 60 124 Q56 126 50 124" fill="${leafColor}" />`);
+      parts.push(`<circle class="seedling-glint s1" cx="44" cy="123.5" r="0.6" fill="#fff" />`);
+      parts.push(`<circle class="seedling-glint s2" cx="56" cy="123.5" r="0.6" fill="#fff" />`);
       svg.innerHTML = parts.join('');
       return;
     }
