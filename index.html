@@ -1539,7 +1539,40 @@
     Object.assign(state, v1);
   }
   let today = new Date().toISOString().slice(0,10);
-  state.history ??= {}; // { 'YYYY-MM-DD': {focusBlocks, breaks, minutes} }
+  state.history ??= {}; // { 'YYYY-MM-DD': {blocks:[{id,ts,minutes,deviceId}], brks:[...], reflection:{text,savedAt,deviceId}, intention:{...}} }
+  // Stable per-device identifier so multi-device events don't collide on id collisions
+  state.deviceId ??= (crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+
+  // ---- backward-compatible day-stat helpers ----
+  // history entries can be in old shape ({focusBlocks: number, breaks: number, reflection: "text", intention: "text"})
+  // or new shape ({blocks: [...], brks: [...], reflection: {text, savedAt, deviceId}, intention: {...}}).
+  // these helpers read either.
+  function dayBlocks(h) {
+    if (!h) return 0;
+    if (Array.isArray(h.blocks)) return h.blocks.length;
+    return h.focusBlocks || 0;
+  }
+  function dayBreaks(h) {
+    if (!h) return 0;
+    if (Array.isArray(h.brks)) return h.brks.length;
+    return typeof h.breaks === 'number' ? h.breaks : 0;
+  }
+  function dayMinutes(h) {
+    if (!h) return 0;
+    if (Array.isArray(h.blocks)) return h.blocks.reduce((s, b) => s + (b.minutes || 0), 0);
+    return h.minutes || 0;
+  }
+  function dayReflection(h) {
+    if (!h || !h.reflection) return null;
+    return typeof h.reflection === 'string' ? h.reflection : h.reflection.text;
+  }
+  function dayIntention(h) {
+    if (!h || !h.intention) return null;
+    return typeof h.intention === 'string' ? h.intention : h.intention.text;
+  }
+  function _newId() {
+    return (crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+  }
   if (state.date !== today) {
     state.date = today;
     state.streak = 0;
@@ -1564,18 +1597,19 @@
   state.fileSync ??= { fileName: null, lastSyncedAt: null };
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
   state.alarmLastFiredAt ??= null;
-  state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+  state.history[today] ??= {};
 
   let save = () => localStorage.setItem('onething.v2', JSON.stringify(state));
 
   function recordFocusBlock(minutes) {
-    state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
-    state.history[today].focusBlocks += 1;
-    state.history[today].minutes += (minutes || 0);
+    const h = state.history[today] ??= {};
+    h.blocks = Array.isArray(h.blocks) ? h.blocks : [];
+    h.blocks.push({ id: _newId(), ts: Date.now(), minutes: minutes || 0, deviceId: state.deviceId });
   }
   function recordBreak() {
-    state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
-    state.history[today].breaks += 1;
+    const h = state.history[today] ??= {};
+    h.brks = Array.isArray(h.brks) ? h.brks : [];
+    h.brks.push({ id: _newId(), ts: Date.now(), deviceId: state.deviceId });
   }
 
   // --- timer ---
@@ -2012,7 +2046,7 @@
     state.lastStoodAt = null;
     state.cutoffSnoozedUntil = null;
     state.cutoffTriggeredAt = null;
-    state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
+    state.history[today] ??= {};
     save();
     // refresh UI to reflect the new day
     $('streakCount').textContent = 0; // rollover reset, no pop
@@ -2061,20 +2095,19 @@
   function renderIntention() {
     const strip = $('intentionStrip');
     if (!strip) return;
-    const todayHist = state.history[today] || {};
-    const intention = todayHist.intention;
+    const intentionText = dayIntention(state.history[today]);
     const hour = new Date().getHours();
     // logic: show if set, OR if before 2pm and not set
-    if (intention) {
+    if (intentionText) {
       strip.className = 'intention-strip set';
       strip.style.display = '';
       strip.innerHTML = `
         <span class="sun">☀</span>
         <span class="label">Today</span>
-        <span class="text">"${escapeHtml(intention)}"</span>
+        <span class="text">"${escapeHtml(intentionText)}"</span>
         <button class="edit-btn" id="intentionEdit">edit</button>
       `;
-      $('intentionEdit').onclick = () => promptIntention(intention);
+      $('intentionEdit').onclick = () => promptIntention(intentionText);
     } else if (hour < 14) {
       promptIntention('');
     } else {
@@ -2102,8 +2135,8 @@
         strip.style.display = 'none';
         return;
       }
-      state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
-      state.history[today].intention = v;
+      state.history[today] ??= {};
+      state.history[today].intention = { text: v, savedAt: Date.now(), deviceId: state.deviceId };
       save();
       renderIntention();
     };
@@ -2541,8 +2574,15 @@
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0,10);
-      const h = state.history[key] || { focusBlocks: 0, breaks: 0, minutes: 0 };
-      days.push({ key, date: d, ...h });
+      const h = state.history[key];
+      days.push({
+        key, date: d,
+        focusBlocks: dayBlocks(h),
+        breaks: dayBreaks(h),
+        minutes: dayMinutes(h),
+        reflection: dayReflection(h),
+        intention: dayIntention(h)
+      });
     }
     const max = Math.max(1, ...days.map(d => d.focusBlocks));
     const grid = $('weekGrid');
@@ -2571,13 +2611,8 @@
     `;
     // intentions + reflections list (intent in the morning, reflect at night)
     const dayEntries = days
-      .filter(d => state.history[d.key]?.reflection || state.history[d.key]?.intention)
-      .map(d => ({
-        date: d.date,
-        key: d.key,
-        intention: state.history[d.key].intention,
-        reflection: state.history[d.key].reflection
-      }));
+      .filter(d => d.reflection || d.intention)
+      .map(d => ({ date: d.date, key: d.key, intention: d.intention, reflection: d.reflection }));
     const rl = $('reflectionsList');
     if (rl) {
       if (!dayEntries.length) {
@@ -2622,16 +2657,17 @@
   $('cutoffOk').onclick = () => {
     const text = $('reflectionInput').value.trim();
     if (text) {
-      state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
-      state.history[today].reflection = text;
+      state.history[today] ??= {};
+      state.history[today].reflection = { text, savedAt: Date.now(), deviceId: state.deviceId };
       save();
       renderTree(); // fruit appears
     }
     $('cutoffOverlay').classList.remove('show');
   };
-  // pre-fill reflection if already saved today
-  const _existingRefl = state.history[today]?.reflection;
-  if (_existingRefl) $('reflectionInput').value = _existingRefl;
+  // pre-fill reflection if already saved today (handle both old string and new object shapes)
+  // pre-fill reflection if already saved today (handles both old string and new object shapes)
+  const _existingReflText = dayReflection(state.history[today]);
+  if (_existingReflText) $('reflectionInput').value = _existingReflText;
   $('cutoffSnooze30').onclick = () => {
     state.cutoffSnoozedUntil = Date.now() + 30 * 60 * 1000;
     save();
@@ -2892,15 +2928,14 @@
   // with last-7-day consistency. Fruit appears with saved reflections.
   function computeTreeStats() {
     const all = Object.values(state.history || {});
-    const totalBlocks = all.reduce((s, h) => s + (h.focusBlocks || 0), 0);
-    const reflections = all.filter(h => h && h.reflection).length;
+    const totalBlocks = all.reduce((s, h) => s + dayBlocks(h), 0);
+    const reflections = all.filter(h => dayReflection(h)).length;
     // 7-day consistency: fraction of last 7 days with at least 1 block
     let activeDays = 0;
     for (let i = 0; i < 7; i++) {
       const d = new Date(); d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
-      const h = state.history[key];
-      if (h && (h.focusBlocks || 0) > 0) activeDays++;
+      if (dayBlocks(state.history[key]) > 0) activeDays++;
     }
     const consistency = activeDays / 7; // 0..1
     return { totalBlocks, reflections, consistency };
@@ -3127,20 +3162,16 @@
     const hist = state.history || {};
     let count = 0;
     const d = new Date();
-    // walk backwards from today; require >=1 focusBlock
+    // walk backwards from today; require >=1 focus block
     for (let i = 0; i < 365; i++) {
       const key = d.toISOString().slice(0,10);
-      const h = hist[key];
-      if (h && (h.focusBlocks || 0) > 0) {
+      if (dayBlocks(hist[key]) > 0) {
         count++;
       } else if (i === 0) {
         // grace: today might not have a block yet but yesterday counted
-        // — break only if BOTH today and yesterday are empty
         const y = new Date(d); y.setDate(y.getDate() - 1);
         const yk = y.toISOString().slice(0,10);
-        const yh = hist[yk];
-        if (!yh || !(yh.focusBlocks > 0)) break;
-        // skip today, continue from yesterday
+        if (dayBlocks(hist[yk]) === 0) break;
       } else {
         break;
       }
@@ -3299,6 +3330,60 @@
     }
   }
 
+  // Per-day CRDT merge: union blocks/brks by id, latest reflection/intention by savedAt.
+  // This makes history loss-free across devices even when both write the same period.
+  function _mergeHistory(localHist, remoteHist) {
+    const out = { ...(localHist || {}) };
+    for (const [date, rh] of Object.entries(remoteHist || {})) {
+      const lh = out[date] || {};
+      const merged = { ...lh };
+      // unionize block events by id
+      const lBlocks = Array.isArray(lh.blocks) ? lh.blocks : [];
+      const rBlocks = Array.isArray(rh.blocks) ? rh.blocks : [];
+      const seenB = new Set(lBlocks.map(b => b.id));
+      const blocks = [...lBlocks];
+      for (const b of rBlocks) if (b && b.id && !seenB.has(b.id)) blocks.push(b);
+      // unionize break events
+      const lBreaks = Array.isArray(lh.brks) ? lh.brks : [];
+      const rBreaks = Array.isArray(rh.brks) ? rh.brks : [];
+      const seenK = new Set(lBreaks.map(b => b.id));
+      const brks = [...lBreaks];
+      for (const b of rBreaks) if (b && b.id && !seenK.has(b.id)) brks.push(b);
+      if (blocks.length || lh.blocks || rh.blocks) merged.blocks = blocks;
+      if (brks.length || lh.brks || rh.brks) merged.brks = brks;
+      // reflection: latest savedAt wins; if shapes differ (string vs object), object wins
+      const lRefl = lh.reflection;
+      const rRefl = rh.reflection;
+      if (rRefl && !lRefl) merged.reflection = rRefl;
+      else if (lRefl && rRefl) {
+        const lTs = (lRefl && typeof lRefl === 'object' && lRefl.savedAt) || 0;
+        const rTs = (rRefl && typeof rRefl === 'object' && rRefl.savedAt) || 0;
+        merged.reflection = rTs > lTs ? rRefl : lRefl;
+      }
+      // intention: same as reflection
+      const lInt = lh.intention;
+      const rInt = rh.intention;
+      if (rInt && !lInt) merged.intention = rInt;
+      else if (lInt && rInt) {
+        const lTs = (lInt && typeof lInt === 'object' && lInt.savedAt) || 0;
+        const rTs = (rInt && typeof rInt === 'object' && rInt.savedAt) || 0;
+        merged.intention = rTs > lTs ? rInt : lInt;
+      }
+      // if old-shape counters present on either side, keep them as floor (won't double-count)
+      if (typeof lh.focusBlocks === 'number' || typeof rh.focusBlocks === 'number') {
+        merged.focusBlocks = Math.max(lh.focusBlocks || 0, rh.focusBlocks || 0);
+      }
+      if (typeof lh.breaks === 'number' || typeof rh.breaks === 'number') {
+        merged.breaks = Math.max(lh.breaks || 0, rh.breaks || 0);
+      }
+      if (typeof lh.minutes === 'number' || typeof rh.minutes === 'number') {
+        merged.minutes = Math.max(lh.minutes || 0, rh.minutes || 0);
+      }
+      out[date] = merged;
+    }
+    return out;
+  }
+
   async function fileSyncRead() {
     const handle = await _idbGet('syncHandle');
     if (!handle) return false;
@@ -3314,11 +3399,21 @@
       }
       const fileTime = parsed.syncedAt || 0;
       const localTime = state.fileSync.lastSyncedAt || 0;
-      if (fileTime <= localTime) return false; // local is newer or equal
-      // adopt remote data, keep local fileSync metadata + freshen timestamp
-      const fs = { ...state.fileSync, lastSyncedAt: fileTime };
-      for (const k of Object.keys(parsed.data)) state[k] = parsed.data[k];
-      state.fileSync = fs;
+
+      // ALWAYS merge history (CRDT — set union of events, no timestamp gating)
+      const merged = _mergeHistory(state.history || {}, parsed.data.history || {});
+      const historyChanged = JSON.stringify(merged) !== JSON.stringify(state.history || {});
+      state.history = merged;
+
+      // For non-history fields: only adopt if file is strictly newer (LWW)
+      if (fileTime > localTime) {
+        const protectedKeys = new Set(['fileSync', 'history', 'sync', 'deviceId']);
+        for (const k of Object.keys(parsed.data)) {
+          if (!protectedKeys.has(k)) state[k] = parsed.data[k];
+        }
+      }
+      state.fileSync.lastSyncedAt = Math.max(fileTime, localTime, Date.now() - 1);
+      if (!historyChanged && fileTime <= localTime) return false;
       _origSave();
       // re-render everything that's data-driven
       try {
