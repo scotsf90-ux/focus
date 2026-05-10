@@ -1,7 +1,7 @@
 // Service worker for One Thing — offline support + cache-first delivery.
 // Cache version bumps on each deploy so users get fresh HTML automatically.
 
-const CACHE_NAME = 'one-thing-v20260509165239';
+const CACHE_NAME = 'one-thing-v20260509171023';
 const ASSETS = [
   './',
   './index.html',
