@@ -609,6 +609,23 @@
   .reflection-item .text { color: var(--text); font-style: italic; }
   .reflection-empty { color: var(--muted); font-size: 12px; font-style: italic; }
 
+  /* insights line in the week modal */
+  .insights {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(116,224,164,0.05);
+    border: 1px solid rgba(116,224,164,0.18);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .insights b { color: var(--accent-2); font-weight: 600; }
+  .insights .delta-up { color: var(--accent-2); }
+  .insights .delta-down { color: var(--warn); }
+  .insights .delta-flat { color: var(--muted); }
+  .insights-empty { color: var(--muted); font-style: italic; }
+
   /* week chart */
   .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 8px; }
   .week-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -1520,6 +1537,7 @@
     <p class="small">Focus blocks per day — last 7 days.</p>
     <div class="week-grid" id="weekGrid"></div>
     <div class="week-summary" id="weekSummary"></div>
+    <div class="insights" id="insights"></div>
     <div class="reflections-list" id="reflectionsList"></div>
     <div class="actions" style="justify-content:flex-end; margin-top:18px;">
       <button data-close="week" class="primary">Close</button>
@@ -2567,6 +2585,119 @@
   }
   setInterval(() => fetchWeather(false), 30 * 60 * 1000);
 
+  // --- insights: read patterns from event-level history ---
+  function _fmtHour(h) {
+    const ampm = h < 12 ? 'am' : 'pm';
+    return ((h % 12) || 12) + ampm;
+  }
+  function computeInsights() {
+    const hist = state.history || {};
+    const allBlocks = [];
+    for (const date of Object.keys(hist)) {
+      const h = hist[date];
+      if (Array.isArray(h.blocks)) {
+        for (const b of h.blocks) allBlocks.push({ ts: b.ts, date, minutes: b.minutes });
+      } else if (h.focusBlocks && h.focusBlocks > 0) {
+        // legacy counter — synthesize approximate midday timestamps
+        const baseTs = new Date(date + 'T13:00:00').getTime();
+        for (let i = 0; i < h.focusBlocks; i++) {
+          allBlocks.push({ ts: baseTs + i * 30 * 60 * 1000, date, minutes: 25 });
+        }
+      }
+    }
+    if (allBlocks.length === 0) return { totalBlocks: 0 };
+
+    // hour distribution
+    const hourCounts = new Array(24).fill(0);
+    for (const b of allBlocks) hourCounts[new Date(b.ts).getHours()]++;
+    let bestHour = -1, bestHourCount = 0;
+    for (let h = 0; h < 24; h++) {
+      if (hourCounts[h] > bestHourCount) { bestHour = h; bestHourCount = hourCounts[h]; }
+    }
+
+    // day-of-week distribution
+    const dowNames = ['Sundays','Mondays','Tuesdays','Wednesdays','Thursdays','Fridays','Saturdays'];
+    const dowCounts = new Array(7).fill(0);
+    for (const b of allBlocks) dowCounts[new Date(b.ts).getDay()]++;
+    let bestDow = -1, bestDowCount = 0;
+    for (let d = 0; d < 7; d++) {
+      if (dowCounts[d] > bestDowCount) { bestDow = d; bestDowCount = dowCounts[d]; }
+    }
+
+    // this-week vs last-week (rolling 7-day windows from today)
+    const now = Date.now();
+    const day = 86400000;
+    let thisWeek = 0, lastWeek = 0;
+    for (const b of allBlocks) {
+      const age = now - b.ts;
+      if (age < 7 * day) thisWeek++;
+      else if (age < 14 * day) lastWeek++;
+    }
+
+    // longest streak ever (max consecutive dates with at least 1 block)
+    const dates = Object.keys(hist).filter(d => dayBlocks(hist[d]) > 0).sort();
+    let longest = 0, current = 0, prev = null;
+    for (const d of dates) {
+      if (prev) {
+        const diff = Math.round((new Date(d) - new Date(prev)) / day);
+        current = diff === 1 ? current + 1 : 1;
+      } else {
+        current = 1;
+      }
+      if (current > longest) longest = current;
+      prev = d;
+    }
+
+    // average block length
+    const minutesArr = allBlocks.map(b => b.minutes).filter(m => m > 0);
+    const avgMinutes = minutesArr.length
+      ? Math.round(minutesArr.reduce((a, b) => a + b, 0) / minutesArr.length)
+      : 0;
+
+    return {
+      totalBlocks: allBlocks.length,
+      bestHour: bestHourCount > 0 ? _fmtHour(bestHour) : null,
+      bestDow: bestDowCount > 1 ? dowNames[bestDow] : null, // need >1 to claim a pattern
+      thisWeek, lastWeek,
+      delta: thisWeek - lastWeek,
+      longestStreak: longest,
+      avgMinutes
+    };
+  }
+
+  function renderInsights() {
+    const el = $('insights');
+    if (!el) return;
+    const i = computeInsights();
+    if (!i.totalBlocks) {
+      el.innerHTML = '<span class="insights-empty">Patterns appear here once you\'ve logged a few blocks.</span>';
+      return;
+    }
+    const parts = [];
+    if (i.bestHour && i.totalBlocks >= 3) {
+      parts.push(`Most focused around <b>${i.bestHour}</b>`);
+    }
+    if (i.bestDow && i.totalBlocks >= 7) {
+      parts.push(`<b>${i.bestDow}</b> are your most consistent`);
+    }
+    if (i.thisWeek > 0) {
+      let deltaStr = '';
+      if (i.lastWeek > 0) {
+        const cls = i.delta > 0 ? 'delta-up' : i.delta < 0 ? 'delta-down' : 'delta-flat';
+        const sign = i.delta > 0 ? '+' : '';
+        deltaStr = ` <span class="${cls}">(${sign}${i.delta} vs last week)</span>`;
+      }
+      parts.push(`This week: <b>${i.thisWeek} block${i.thisWeek === 1 ? '' : 's'}</b>${deltaStr}`);
+    }
+    if (i.longestStreak >= 3) {
+      parts.push(`Longest run: <b>${i.longestStreak} day${i.longestStreak === 1 ? '' : 's'}</b>`);
+    }
+    if (i.avgMinutes >= 10) {
+      parts.push(`Average block: <b>${i.avgMinutes} min</b>`);
+    }
+    el.innerHTML = parts.length ? parts.join(' &middot; ') : '<span class="insights-empty">Keep going — patterns will surface as you log more.</span>';
+  }
+
   // --- weekly look-back ---
   function openWeek() {
     const days = [];
@@ -2626,6 +2757,7 @@
         }).join('');
       }
     }
+    renderInsights();
     $('weekOverlay').classList.add('show');
   }
 
