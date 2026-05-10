@@ -1460,34 +1460,31 @@
       Used only on-device to fetch weather. Coordinates never leave your browser except to <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> for the forecast.
     </div>
 
-    <h3>Sync <span class="small">(cross-device, optional)</span></h3>
+    <h3>Sync <span class="small">(via iCloud Drive / Dropbox / any synced folder)</span></h3>
     <div id="syncSection">
       <div class="small" style="color: var(--muted); margin: 0 0 8px; line-height: 1.4;">
-        Encrypted sync via your own Cloudflare Worker. Data is encrypted client-side before it leaves the browser. <a href="https://github.com/scotsf90-ux/focus" target="_blank" rel="noopener" style="color: var(--accent-2);">Setup guide</a>.
+        Pick a sync file in any cloud-synced folder (iCloud Drive, Dropbox, Google Drive, OneDrive). Your data writes there on every change. Open this app on another device, point it at the same file, and you're synced — no account, no server, no email. Works in Chrome and Edge.
       </div>
-      <!-- state 1: not configured -->
-      <div id="syncConfigure">
-        <label class="small" style="color: var(--muted); display: block; margin-bottom: 4px;">Sync server URL</label>
-        <input type="url" id="syncUrl" placeholder="https://one-thing-sync.your-name.workers.dev" style="width: 100%;" />
-        <div class="row" style="margin-top: 6px;">
-          <button id="syncSaveUrl" class="ghost" style="font-size: 13px; padding: 6px 12px;">Save</button>
+      <!-- state 1: not connected -->
+      <div id="fileSyncSetup">
+        <button id="fileSyncPick" class="primary" style="font-size: 13px; padding: 7px 14px;">Pick a sync file</button>
+        <div class="small" style="color: var(--muted); margin-top: 8px; line-height: 1.4;">
+          Tip: navigate to <code>~/Library/Mobile Documents/com~apple~CloudDocs/</code> (iCloud Drive) and save as <code>one-thing-sync.json</code>. Then on your iPhone/iPad/other Mac, browse to the same file.
         </div>
       </div>
-      <!-- state 2: configured, signed out -->
-      <div id="syncSignIn" hidden>
-        <div class="small" style="color: var(--muted); margin-bottom: 6px;">Server: <span id="syncUrlDisplay" style="color: var(--text);"></span> · <a href="#" id="syncChangeUrl" style="color: var(--accent-2);">change</a></div>
-        <input type="email" id="syncEmail" placeholder="you@example.com" style="width: 100%;" />
-        <div class="row" style="margin-top: 6px;">
-          <button id="syncSendLink" class="primary" style="font-size: 13px; padding: 6px 12px;">Send sign-in link</button>
-        </div>
-      </div>
-      <!-- state 3: signed in -->
-      <div id="syncSignedIn" hidden>
-        <div class="small" style="color: var(--muted); margin-bottom: 6px;">Signed in as <b id="syncEmailDisplay" style="color: var(--text);"></b></div>
-        <div class="small" style="color: var(--muted); margin-bottom: 8px;">Last synced: <span id="syncLastTime">—</span></div>
+      <!-- state 2: connected -->
+      <div id="fileSyncActive" hidden>
+        <div class="small" style="color: var(--muted); margin-bottom: 4px;">Synced file: <b id="fileSyncName" style="color: var(--text);"></b></div>
+        <div class="small" style="color: var(--muted); margin-bottom: 8px;">Last synced: <span id="fileSyncTime">never</span></div>
         <div class="row" style="gap: 6px;">
-          <button id="syncNowBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Sync now</button>
-          <button id="syncSignOutBtn" class="ghost danger" style="font-size: 13px; padding: 6px 12px;">Sign out</button>
+          <button id="fileSyncNow" class="ghost" style="font-size: 13px; padding: 6px 12px;">Sync now</button>
+          <button id="fileSyncDisconnect" class="ghost danger" style="font-size: 13px; padding: 6px 12px;">Disconnect</button>
+        </div>
+      </div>
+      <!-- unsupported browser -->
+      <div id="fileSyncUnsupported" hidden>
+        <div class="small" style="color: var(--warn); line-height: 1.4;">
+          Your browser doesn't support file-based sync. Use Chrome or Edge on desktop. <br>For now, use <b>Export JSON</b> below to back up manually.
         </div>
       </div>
       <div id="syncStatus" class="small" style="color: var(--muted); margin-top: 8px; min-height: 1em;"></div>
@@ -1564,7 +1561,7 @@
   state.ambient.type = 'off';
   state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
   state.onboarded ??= false;
-  state.sync ??= { url: null, session: null, email: null, secret: null, lastPushAt: null, lastPullAt: null };
+  state.fileSync ??= { fileName: null, lastSyncedAt: null };
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
   state.alarmLastFiredAt ??= null;
   state.history[today] ??= { focusBlocks: 0, breaks: 0, minutes: 0 };
@@ -3205,49 +3202,15 @@
   setInterval(updateTreeMood, 5 * 60 * 1000);
 
   // ============================================================
-  // CROSS-DEVICE SYNC ENGINE
+  // FILE-BASED SYNC ENGINE (iCloud Drive / Dropbox / any synced folder)
   // ============================================================
-  // Magic-link auth via a self-hosted Cloudflare Worker. State is
-  // encrypted client-side (AES-GCM, key derived via PBKDF2 from
-  // email + per-account secret) before being pushed. Server stores
-  // ciphertext only.
+  // No backend. User picks a JSON file in a cloud-synced folder via
+  // File System Access API. We persist the FileSystemHandle in
+  // IndexedDB so the connection survives reloads. Every save() also
+  // writes to the file (5s debounce). On init we read the file and
+  // adopt it if it's newer than our local state.
+  // Future: replace with Replicache for proper conflict resolution.
   // ============================================================
-
-  const _td = new TextDecoder();
-  const _te = new TextEncoder();
-
-  async function _deriveSyncKey(email, secret) {
-    const material = await crypto.subtle.importKey(
-      'raw', _te.encode(secret), 'PBKDF2', false, ['deriveKey']
-    );
-    return crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt: _te.encode(email), iterations: 120000, hash: 'SHA-256' },
-      material,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
-  }
-  async function _encryptBlob(plaintextObj, key) {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const data = _te.encode(JSON.stringify(plaintextObj));
-    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
-    const packed = new Uint8Array(iv.length + ct.byteLength);
-    packed.set(iv, 0);
-    packed.set(new Uint8Array(ct), iv.length);
-    let s = '';
-    for (const b of packed) s += String.fromCharCode(b);
-    return btoa(s);
-  }
-  async function _decryptBlob(blob, key) {
-    const bin = atob(blob);
-    const buf = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-    const iv = buf.slice(0, 12);
-    const ct = buf.slice(12);
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-    return JSON.parse(_td.decode(pt));
-  }
 
   function setSyncStatus(text, kind) {
     const el = $('syncStatus');
@@ -3258,210 +3221,241 @@
     if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 6000);
   }
 
-  function syncIsSignedIn() {
-    return !!(state.sync && state.sync.url && state.sync.session && state.sync.email && state.sync.secret);
-  }
-  function syncIsConfigured() {
-    return !!(state.sync && state.sync.url);
-  }
-
-  function refreshSyncUI() {
-    const cfg = $('syncConfigure');
-    const signIn = $('syncSignIn');
-    const signedIn = $('syncSignedIn');
-    if (!cfg || !signIn || !signedIn) return;
-    cfg.hidden = signIn.hidden = signedIn.hidden = true;
-    if (syncIsSignedIn()) {
-      signedIn.hidden = false;
-      $('syncEmailDisplay').textContent = state.sync.email;
-      const t = state.sync.lastPushAt || state.sync.lastPullAt;
-      $('syncLastTime').textContent = t ? new Date(t).toLocaleString() : 'never';
-    } else if (syncIsConfigured()) {
-      signIn.hidden = false;
-      $('syncUrlDisplay').textContent = state.sync.url;
-    } else {
-      cfg.hidden = false;
-    }
-  }
-
-  async function syncRequestLink(email) {
-    const r = await fetch(state.sync.url + '/auth/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
+  // ---- IndexedDB helper for storing FileSystemHandles ----
+  function _idbOpen() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('one-thing-fs', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('h');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
     });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || 'request failed');
-    return data;
   }
-  async function syncVerifyToken(token) {
-    const r = await fetch(state.sync.url + '/auth/verify?token=' + encodeURIComponent(token));
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || 'verify failed');
-    return data;
+  async function _idbGet(key) {
+    const db = await _idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('h', 'readonly');
+      const r = tx.objectStore('h').get(key);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+  }
+  async function _idbSet(key, value) {
+    const db = await _idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('h', 'readwrite');
+      tx.objectStore('h').put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function _idbDel(key) {
+    const db = await _idbOpen();
+    return new Promise((resolve) => {
+      const tx = db.transaction('h', 'readwrite');
+      tx.objectStore('h').delete(key);
+      tx.oncomplete = () => resolve();
+    });
   }
 
-  async function syncPull() {
-    if (!syncIsSignedIn()) return false;
-    const r = await fetch(state.sync.url + '/data', {
-      headers: { 'Authorization': 'Bearer ' + state.sync.session }
-    });
-    if (r.status === 401) {
-      // session expired — force sign-out
-      state.sync.session = null;
-      save(); refreshSyncUI();
-      setSyncStatus('Session expired — please sign in again.', 'err');
+  function fileSyncSupported() {
+    return typeof window !== 'undefined' &&
+           'showSaveFilePicker' in window &&
+           'showOpenFilePicker' in window;
+  }
+
+  async function fileSyncEnsurePermission(handle, mode) {
+    if (!handle.queryPermission) return true;
+    let perm = await handle.queryPermission({ mode });
+    if (perm === 'granted') return true;
+    perm = await handle.requestPermission({ mode });
+    return perm === 'granted';
+  }
+
+  async function fileSyncWrite() {
+    const handle = await _idbGet('syncHandle');
+    if (!handle) return false;
+    if (!(await fileSyncEnsurePermission(handle, 'readwrite'))) {
+      setSyncStatus('Permission to write the sync file was denied.', 'err');
       return false;
     }
-    if (!r.ok) throw new Error('pull http ' + r.status);
-    const { blob, updatedAt } = await r.json();
-    if (!blob) {
-      // server is empty — push our current state
-      await syncPush();
-      return true;
-    }
-    const key = await _deriveSyncKey(state.sync.email, state.sync.secret);
-    let remote;
-    try { remote = await _decryptBlob(blob, key); }
-    catch { setSyncStatus('Couldn\'t decrypt — wrong account?', 'err'); return false; }
-    // replace local data with remote, preserve sync session locally
-    const sync = { ...state.sync, lastPullAt: Date.now() };
-    for (const k of Object.keys(remote)) state[k] = remote[k];
-    state.sync = sync;
-    save();
-    // re-render the world to reflect pulled data
     try {
-      if (typeof renderTree === 'function') renderTree();
-      if (typeof renderPark === 'function') renderPark();
-      if (typeof renderBodyContacts === 'function') renderBodyContacts();
-      if (typeof updateGreeting === 'function') updateGreeting();
-      if (typeof renderIntention === 'function') renderIntention();
-      if (typeof applyStreakHalo === 'function') applyStreakHalo();
-      if (typeof renderWeatherChip === 'function') renderWeatherChip();
-      $('streakCount').textContent = state.streak || 0;
-      $('taskInput').value = state.task || '';
-    } catch(_) {}
-    return true;
-  }
-
-  let _syncPushTimer = null;
-  async function syncPush() {
-    if (!syncIsSignedIn()) return false;
-    try {
-      const key = await _deriveSyncKey(state.sync.email, state.sync.secret);
-      // encrypt everything except the sync block itself (avoid recursion)
-      const { sync, ...rest } = state;
-      const blob = await _encryptBlob(rest, key);
-      const r = await fetch(state.sync.url + '/data', {
-        method: 'PUT',
-        headers: { 'Authorization': 'Bearer ' + state.sync.session, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blob })
-      });
-      if (r.status === 401) {
-        state.sync.session = null;
-        save(); refreshSyncUI();
-        setSyncStatus('Session expired — please sign in again.', 'err');
-        return false;
-      }
-      if (!r.ok) throw new Error('push http ' + r.status);
-      state.sync.lastPushAt = Date.now();
-      save();
-      refreshSyncUI();
+      const writable = await handle.createWritable();
+      const payload = {
+        app: 'one-thing',
+        version: 2,
+        syncedAt: Date.now(),
+        // exclude fileSync metadata so it doesn't bounce between devices
+        data: (() => { const { fileSync, ...rest } = state; return rest; })()
+      };
+      await writable.write(JSON.stringify(payload, null, 2));
+      await writable.close();
+      state.fileSync.lastSyncedAt = Date.now();
+      _origSave(); // skip the sync wrapper to avoid recursion
+      refreshFileSyncUI();
       return true;
     } catch (e) {
-      setSyncStatus('Sync failed: ' + (e.message || e), 'err');
+      setSyncStatus('Write failed: ' + (e.message || e), 'err');
       return false;
     }
   }
-  function scheduleSyncPush() {
-    if (!syncIsSignedIn()) return;
-    if (_syncPushTimer) clearTimeout(_syncPushTimer);
-    _syncPushTimer = setTimeout(() => { _syncPushTimer = null; syncPush(); }, 5000); // 5s debounce
+
+  async function fileSyncRead() {
+    const handle = await _idbGet('syncHandle');
+    if (!handle) return false;
+    if (!(await fileSyncEnsurePermission(handle, 'read'))) return false;
+    try {
+      const file = await handle.getFile();
+      if (file.size === 0) return false; // freshly created, nothing to merge
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!parsed || parsed.app !== 'one-thing' || !parsed.data) {
+        setSyncStatus('Sync file isn\'t a One Thing file — disconnect to switch.', 'err');
+        return false;
+      }
+      const fileTime = parsed.syncedAt || 0;
+      const localTime = state.fileSync.lastSyncedAt || 0;
+      if (fileTime <= localTime) return false; // local is newer or equal
+      // adopt remote data, keep local fileSync metadata + freshen timestamp
+      const fs = { ...state.fileSync, lastSyncedAt: fileTime };
+      for (const k of Object.keys(parsed.data)) state[k] = parsed.data[k];
+      state.fileSync = fs;
+      _origSave();
+      // re-render everything that's data-driven
+      try {
+        if (typeof renderTree === 'function') renderTree();
+        if (typeof renderPark === 'function') renderPark();
+        if (typeof renderBodyContacts === 'function') renderBodyContacts();
+        if (typeof updateGreeting === 'function') updateGreeting();
+        if (typeof renderIntention === 'function') renderIntention();
+        if (typeof applyStreakHalo === 'function') applyStreakHalo();
+        if (typeof renderWeatherChip === 'function') renderWeatherChip();
+        $('streakCount').textContent = state.streak || 0;
+        $('taskInput').value = state.task || '';
+      } catch(_) {}
+      return true;
+    } catch (e) {
+      setSyncStatus('Read failed: ' + (e.message || e), 'err');
+      return false;
+    }
   }
 
-  // wrap save() so every persist also schedules a sync push
+  async function fileSyncPick() {
+    if (!fileSyncSupported()) {
+      setSyncStatus('Browser doesn\'t support file sync. Use Chrome or Edge.', 'err');
+      return;
+    }
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'one-thing-sync.json',
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+      });
+      // Try reading first — if user picked an existing file, adopt it.
+      let adopted = false;
+      try {
+        const f = await handle.getFile();
+        if (f.size > 0) {
+          const txt = await f.text();
+          const parsed = JSON.parse(txt);
+          if (parsed && parsed.app === 'one-thing' && parsed.data) {
+            const ok = window.confirm('This file already has One Thing data from ' + (parsed.syncedAt ? new Date(parsed.syncedAt).toLocaleString() : 'unknown') + '. Replace your local data with it?');
+            if (ok) {
+              for (const k of Object.keys(parsed.data)) state[k] = parsed.data[k];
+              adopted = true;
+            }
+          }
+        }
+      } catch(_) {}
+      await _idbSet('syncHandle', handle);
+      state.fileSync = { fileName: handle.name, lastSyncedAt: adopted ? Date.now() : null };
+      _origSave();
+      refreshFileSyncUI();
+      // initial write to anchor our state in the file
+      const ok = await fileSyncWrite();
+      if (ok) setSyncStatus('✓ Connected. Auto-syncs on every change.', 'ok');
+      // if we adopted, re-render
+      if (adopted) {
+        try {
+          if (typeof renderTree === 'function') renderTree();
+          if (typeof renderPark === 'function') renderPark();
+          if (typeof renderBodyContacts === 'function') renderBodyContacts();
+          if (typeof updateGreeting === 'function') updateGreeting();
+          if (typeof renderIntention === 'function') renderIntention();
+          if (typeof applyStreakHalo === 'function') applyStreakHalo();
+          $('streakCount').textContent = state.streak || 0;
+          $('taskInput').value = state.task || '';
+        } catch(_) {}
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') setSyncStatus('Connect failed: ' + (e.message || e), 'err');
+    }
+  }
+
+  async function fileSyncDisconnect() {
+    if (!confirm('Disconnect file sync? Your local data stays intact and the file is left as-is.')) return;
+    await _idbDel('syncHandle');
+    state.fileSync = { fileName: null, lastSyncedAt: null };
+    _origSave();
+    refreshFileSyncUI();
+    setSyncStatus('Disconnected.', 'muted');
+  }
+
+  let _fileSyncTimer = null;
+  function scheduleFileSync() {
+    if (!state.fileSync || !state.fileSync.fileName) return;
+    if (_fileSyncTimer) clearTimeout(_fileSyncTimer);
+    _fileSyncTimer = setTimeout(() => { _fileSyncTimer = null; fileSyncWrite(); }, 5000);
+  }
+
+  function refreshFileSyncUI() {
+    const setup = $('fileSyncSetup');
+    const active = $('fileSyncActive');
+    const unsupported = $('fileSyncUnsupported');
+    if (!setup || !active || !unsupported) return;
+    setup.hidden = active.hidden = unsupported.hidden = true;
+    if (!fileSyncSupported()) {
+      unsupported.hidden = false;
+      return;
+    }
+    if (state.fileSync && state.fileSync.fileName) {
+      active.hidden = false;
+      $('fileSyncName').textContent = state.fileSync.fileName;
+      $('fileSyncTime').textContent = state.fileSync.lastSyncedAt
+        ? new Date(state.fileSync.lastSyncedAt).toLocaleString()
+        : 'never';
+    } else {
+      setup.hidden = false;
+    }
+  }
+
+  // wrap save() so every persist also schedules a file sync write
   const _origSave = save;
   save = function() {
     _origSave();
-    scheduleSyncPush();
+    scheduleFileSync();
   };
 
-  // ----- magic-link landing -----
-  async function handleMagicLink() {
-    const m = location.hash.match(/sync_token=([^&]+)/);
-    if (!m) return;
-    const token = decodeURIComponent(m[1]);
-    // clean URL
-    history.replaceState(null, '', location.pathname + location.search);
-    if (!state.sync.url) {
-      setSyncStatus('Sign-in clicked, but no sync server configured. Save your worker URL in Settings → Sync first.', 'err');
-      return;
-    }
-    setSyncStatus('Verifying sign-in…', 'muted');
-    try {
-      const data = await syncVerifyToken(token);
-      state.sync.session = data.session;
-      state.sync.email = data.email;
-      state.sync.secret = data.secret;
-      save();
-      refreshSyncUI();
-      setSyncStatus('Signed in. Pulling…', 'muted');
-      await syncPull();
-      setSyncStatus('Synced.', 'ok');
-    } catch (e) {
-      setSyncStatus('Sign-in failed: ' + (e.message || e), 'err');
-    }
-  }
-
-  // ----- settings UI wiring -----
-  if ($('syncSaveUrl')) $('syncSaveUrl').onclick = () => {
-    const url = ($('syncUrl').value || '').trim().replace(/\/$/, '');
-    if (!/^https?:\/\//.test(url)) { setSyncStatus('Enter a full URL (https://…)', 'err'); return; }
-    state.sync.url = url;
-    save();
-    refreshSyncUI();
-    setSyncStatus('Saved. Sign in next.', 'ok');
-  };
-  if ($('syncChangeUrl')) $('syncChangeUrl').onclick = (e) => {
-    e.preventDefault();
-    state.sync.url = null; state.sync.session = null; state.sync.email = null; state.sync.secret = null;
-    save(); refreshSyncUI();
-  };
-  if ($('syncSendLink')) $('syncSendLink').onclick = async () => {
-    const email = ($('syncEmail').value || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setSyncStatus('Enter a valid email.', 'err'); return; }
-    setSyncStatus('Sending link…', 'muted');
-    try {
-      await syncRequestLink(email);
-      setSyncStatus('✓ Link sent. Check your email.', 'ok');
-    } catch (e) {
-      setSyncStatus('Failed: ' + (e.message || e), 'err');
-    }
-  };
-  if ($('syncNowBtn')) $('syncNowBtn').onclick = async () => {
+  // wire UI handlers
+  if ($('fileSyncPick')) $('fileSyncPick').onclick = fileSyncPick;
+  if ($('fileSyncNow')) $('fileSyncNow').onclick = async () => {
     setSyncStatus('Syncing…', 'muted');
-    const ok = await syncPush();
+    const ok = await fileSyncWrite();
     if (ok) setSyncStatus('✓ Synced.', 'ok');
   };
-  if ($('syncSignOutBtn')) $('syncSignOutBtn').onclick = async () => {
-    if (!confirm('Sign out of sync? Your local data stays intact.')) return;
-    try {
-      await fetch(state.sync.url + '/auth/signout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.sync.session } });
-    } catch(_) {}
-    state.sync.session = null; state.sync.email = null; state.sync.secret = null;
-    save(); refreshSyncUI();
-    setSyncStatus('Signed out.', 'muted');
-  };
+  if ($('fileSyncDisconnect')) $('fileSyncDisconnect').onclick = fileSyncDisconnect;
 
-  // initial setup: hydrate URL input + render correct state
-  if ($('syncUrl') && state.sync.url) $('syncUrl').value = state.sync.url;
-  refreshSyncUI();
-  // handle magic-link landing if URL hash has a sync_token
-  handleMagicLink();
-  // pull on init if signed in (refresh data from cloud)
-  if (syncIsSignedIn()) {
-    syncPull().catch(() => {});
-  }
+  // initial render + read attempt if a handle is already saved
+  refreshFileSyncUI();
+  (async () => {
+    const handle = await _idbGet('syncHandle').catch(() => null);
+    if (handle && state.fileSync && state.fileSync.fileName) {
+      // try to pull any newer data from the file at startup
+      const updated = await fileSyncRead();
+      if (updated) setSyncStatus('Pulled fresh data from sync file.', 'ok');
+    }
+  })();
+
+  // alias the new name for places elsewhere that look for refreshSyncUI
+  function refreshSyncUI() { refreshFileSyncUI(); }
 
   // --- onboarding tour (4 steps, first-time only, replayable from settings) ---
   const tourSteps = [
