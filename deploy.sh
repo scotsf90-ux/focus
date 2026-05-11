@@ -6,14 +6,15 @@ set -euo pipefail
 
 SRC=/Users/brain/claude/focus.html
 WEB=/Users/brain/claude/focus-web
-SW_TEMPLATE=$WEB/service-worker.js
+APP=$WEB/app
+SW_TEMPLATE=$APP/service-worker.js
 
 if [ ! -f "$SRC" ]; then
   echo "deploy: source not found at $SRC" >&2
   exit 1
 fi
 
-cp "$SRC" "$WEB/index.html"
+cp "$SRC" "$APP/index.html"
 
 # Stamp service worker with build timestamp so the cache version bumps on every deploy
 BUILD=$(date +%Y%m%d%H%M%S)
@@ -28,14 +29,14 @@ p.write_text(s)
 PY
 
 cd "$WEB"
-if git diff --quiet -- index.html service-worker.js; then
+if git diff --quiet -- app/index.html app/service-worker.js; then
   echo "deploy: no changes to push"
   exit 0
 fi
 
-git add index.html service-worker.js
+git add app/index.html app/service-worker.js
 git commit -qm "deploy: build $BUILD"
 git push -q
 
 echo "deploy: pushed build $BUILD"
-echo "deploy: live in ~30s at https://scotsf90-ux.github.io/focus/"
+echo "deploy: live in ~30s at https://scotsf90-ux.github.io/focus/app/"

@@ -43,7 +43,7 @@
   <div class="meta">Last updated: May 11, 2026</div>
 
   <div class="tldr">
-    <p><b>Short version:</b> Vesper is a single HTML file running in your browser. I don't have servers, I don't have analytics, I don't see what you type. Your data lives in your browser's local storage and — if you turn on sync — in a JSON file you put in your own cloud folder. That's the whole thing.</p>
+    <p><b>Short version:</b> Vesper is a single HTML file running in your browser. I don't have servers, I don't have analytics, I don't see what you type. Your data lives in your browser's local storage and — if you turn on sync — in a JSON file you put in your own cloud folder. The one exception, all opt-in: if you turn on Smart clustering, your browser fetches a small ML model once from a public CDN and then runs it locally on your device. That's the whole thing.</p>
   </div>
 
   <h2>What Vesper stores about you</h2>
@@ -54,6 +54,7 @@
   <ul>
     <li><b>Weather backgrounds</b> — if you grant location permission, your latitude and longitude (rounded to 4 decimals, ~10m precision) are sent to <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> to fetch current weather. Open-Meteo is a free, open-source weather API that does not require an account. They publish their own privacy practices.</li>
     <li><b>File-based sync</b> — if you pick a sync file, the file lives in whatever cloud folder you put it in (iCloud Drive, Dropbox, Google Drive, OneDrive). Vesper writes your data there. The privacy of that file is governed by your cloud provider's terms. The file is plain JSON; I recommend keeping it in a private folder.</li>
+    <li><b>Smart clustering</b> <i>(experimental, off by default)</i> — if you turn this on in Settings, Vesper downloads a tiny sentence-embedding model (<code>Xenova/all-MiniLM-L6-v2</code>, ~25 MB) from <a href="https://www.jsdelivr.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">jsDelivr</a>, a public CDN that mirrors npm packages and HuggingFace model files. The download happens once and is cached in your browser. After that, the model runs <b>entirely on your device</b> — your brain-dump text is never sent over the network. The library is <a href="https://github.com/huggingface/transformers.js" target="_blank" rel="noopener" style="color: var(--accent-2);">Transformers.js</a> by HuggingFace; the model is by the Xenova community port of <a href="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2" target="_blank" rel="noopener" style="color: var(--accent-2);">all-MiniLM-L6-v2</a>. jsDelivr publishes its own privacy practices. To stop using it, untick the setting; your existing data stays in place.</li>
     <li><b>Browser notifications</b> — if you enable browser notifications, alerts are scheduled and fired by your browser. No external service is involved.</li>
     <li><b>Service worker</b> — Vesper installs a service worker for offline use. It caches the app's HTML and icons. It does not send anything anywhere.</li>
   </ul>
