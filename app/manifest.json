@@ -1,7 +1,7 @@
 {
-  "name": "One Thing — focus tool",
-  "short_name": "One Thing",
-  "description": "A calm focus companion for ADHD desk-workers who love being outside and around people.",
+  "name": "Vesper — a kinder Pomodoro",
+  "short_name": "Vesper",
+  "description": "A kinder Pomodoro for people who also have a life.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
