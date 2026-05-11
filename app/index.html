@@ -3233,29 +3233,39 @@
     const embedded = dumps.filter(d => Array.isArray(_dumpEmbedding(d)) && _dumpEmbedding(d).length);
     const smartReady = !!(state.ml && state.ml.enabled) && dumps.length >= 2 && (embedded.length / dumps.length) >= 0.8;
 
+    // Pre-compute clusters so the intro can be honest about what actually happened.
+    let clusters = null, groups = [], singletons = [];
+    if (smartReady) {
+      clusters = clusterByEmbedding(embedded, 0.5);
+      groups = clusters.filter(c => c.items.length > 1);
+      singletons = clusters.filter(c => c.items.length === 1).flatMap(c => c.items);
+    }
+    const smartGrouped = smartReady && groups.length > 0;
+
     if (intro) {
       const base = `${dumps.length} thought${dumps.length === 1 ? '' : 's'} parked.`;
-      intro.textContent = smartReady
-        ? `${base} Grouped by meaning. Keep what matters, let the rest go.`
-        : `${base} Keep what matters, let the rest go.`;
+      if (smartGrouped) {
+        intro.textContent = `${base} Grouped by meaning. Keep what matters, let the rest go.`;
+      } else if (smartReady) {
+        // ML is on and indexed everything, but nothing was similar enough to group.
+        // Be honest about that and fall through to keyword grouping below.
+        intro.textContent = `${base} Indexed by meaning — nothing close enough to group yet. Sorted by shape below.`;
+      } else {
+        intro.textContent = `${base} Keep what matters, let the rest go.`;
+      }
     }
 
     const parts = [];
 
-    if (smartReady) {
-      const clusters = clusterByEmbedding(embedded, 0.5);
+    const renderItem = (d) => {
+      const t = _dumpText(d);
+      const icon = detectAction(t) ? '⚡' : (detectQuestion(t) ? '?' : '');
+      const iconHtml = icon ? `<span class="settle-tag" title="${icon === '⚡' ? 'looks like a to-do' : 'looks like a question'}">${icon}</span>` : '';
+      return `<li>${iconHtml}<span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`;
+    };
+
+    if (smartGrouped) {
       const unembedded = dumps.filter(d => !Array.isArray(_dumpEmbedding(d)) || !_dumpEmbedding(d).length);
-      // group singletons together at the end for visual calm
-      const groups = clusters.filter(c => c.items.length > 1);
-      const singletons = clusters.filter(c => c.items.length === 1).flatMap(c => c.items);
-
-      const renderItem = (d) => {
-        const t = _dumpText(d);
-        const icon = detectAction(t) ? '⚡' : (detectQuestion(t) ? '?' : '');
-        const iconHtml = icon ? `<span class="settle-tag" title="${icon === '⚡' ? 'looks like a to-do' : 'looks like a question'}">${icon}</span>` : '';
-        return `<li>${iconHtml}<span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`;
-      };
-
       for (const c of groups) {
         const items = c.items.map(renderItem).join('');
         const textsAttr = escapeHtml(JSON.stringify(c.items.map(_dumpText)));
@@ -3271,7 +3281,8 @@
         parts.push(`<div class="settle-section cluster pending"><h4>Not yet indexed <span class="count">${unembedded.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
       }
     } else {
-      // Legacy keyword/heuristic grouping (also used as fallback when clustering is off).
+      // Either smart clustering is off OR it's on but nothing grouped.
+      // Either way, keyword/heuristic grouping is the most useful next view.
       const themes = extractThemes(texts);
       const actions = texts.filter(detectAction);
       const questions = texts.filter(t => !detectAction(t) && detectQuestion(t));
