@@ -779,6 +779,29 @@
     flex-shrink: 0;
   }
   .settle-list li .del:hover { color: var(--warn); }
+  .settle-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    color: var(--muted);
+    font-size: 11px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .settle-section.cluster h4 {
+    color: var(--accent-2);
+    text-transform: none;
+    font-size: 14px;
+    letter-spacing: 0;
+    font-weight: 600;
+  }
+  .settle-section.cluster.solo h4 { color: var(--muted); }
+  .settle-section.cluster.pending h4 { color: var(--muted); font-style: italic; }
+  .settle-section.cluster li { border-left: 3px solid rgba(116,224,164,0.35); }
+  .settle-section.cluster.solo li { border-left: 3px solid var(--line); }
   .settle-empty {
     color: var(--muted);
     font-style: italic;
@@ -3085,6 +3108,65 @@
       .catch(err => { console.warn('[ML] embed failed for dump:', err && err.message); });
   }
 
+  // Cosine similarity (vectors are already L2-normalized by the pipeline,
+  // so this is just dot product).
+  function _cosSim(a, b) {
+    let s = 0;
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) s += a[i] * b[i];
+    return s;
+  }
+
+  // Greedy agglomerative clustering on normalized embeddings.
+  // Each dump joins the existing cluster whose centroid is most similar above
+  // `threshold`; otherwise it starts a new cluster.
+  // Threshold 0.5 was chosen empirically for all-MiniLM-L6-v2 on short
+  // sentence-fragments — tight enough to keep unrelated thoughts apart, loose
+  // enough to group near-paraphrases.
+  function clusterByEmbedding(dumps, threshold = 0.5) {
+    const clusters = [];
+    for (const d of dumps) {
+      const emb = _dumpEmbedding(d);
+      if (!emb || emb.length === 0) continue;
+      let bestIdx = -1;
+      let bestSim = threshold;
+      for (let i = 0; i < clusters.length; i++) {
+        const sim = _cosSim(emb, clusters[i].centroid);
+        if (sim > bestSim) { bestSim = sim; bestIdx = i; }
+      }
+      if (bestIdx === -1) {
+        clusters.push({ items: [d], centroid: emb.slice() });
+      } else {
+        const c = clusters[bestIdx];
+        const n = c.items.length;
+        for (let i = 0; i < c.centroid.length; i++) {
+          c.centroid[i] = (c.centroid[i] * n + emb[i]) / (n + 1);
+        }
+        // re-normalize centroid so subsequent cos-sim stays scale-consistent
+        let norm = 0;
+        for (let i = 0; i < c.centroid.length; i++) norm += c.centroid[i] * c.centroid[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < c.centroid.length; i++) c.centroid[i] /= norm;
+        c.items.push(d);
+      }
+    }
+    return clusters
+      .map(c => ({ items: c.items, label: _labelCluster(c.items) }))
+      .sort((a, b) => b.items.length - a.items.length);
+  }
+
+  function _labelCluster(items) {
+    if (items.length === 1) {
+      const t = _dumpText(items[0]);
+      return t.length > 40 ? t.slice(0, 37) + '…' : t;
+    }
+    const themes = extractThemes(items.map(_dumpText));
+    if (themes.length) return themes[0].word;
+    // last-resort: first three non-stopword tokens of the first item
+    const toks = _tokenize(_dumpText(items[0])).slice(0, 3);
+    return toks.length ? toks.join(' ') : 'group';
+  }
+
   // Backfill: embed any dumps that don't yet have a vector. Used after the
   // user first turns smart clustering on so existing dumps get clustered too.
   async function backfillDumpEmbeddings() {
@@ -3114,31 +3196,72 @@
       container.innerHTML = '<div class="settle-empty">No thoughts in the parking lot right now.</div>';
       return;
     }
-    if (intro) intro.textContent = `${dumps.length} thought${dumps.length === 1 ? '' : 's'} parked. Keep what matters, let the rest go.`;
 
-    const themes = extractThemes(texts);
-    const actions = texts.filter(detectAction);
-    const questions = texts.filter(t => !detectAction(t) && detectQuestion(t));
+    // Decide: semantic clustering (smart clustering on + ≥80% of dumps embedded)
+    // or fall back to keyword/heuristic grouping.
+    const embedded = dumps.filter(d => Array.isArray(_dumpEmbedding(d)) && _dumpEmbedding(d).length);
+    const smartReady = !!(state.ml && state.ml.enabled) && dumps.length >= 2 && (embedded.length / dumps.length) >= 0.8;
+
+    if (intro) {
+      const base = `${dumps.length} thought${dumps.length === 1 ? '' : 's'} parked.`;
+      intro.textContent = smartReady
+        ? `${base} Grouped by meaning. Keep what matters, let the rest go.`
+        : `${base} Keep what matters, let the rest go.`;
+    }
 
     const parts = [];
-    if (themes.length) {
-      const chips = themes.map(t => `<span class="settle-theme"><b>${t.n}×</b>${escapeHtml(t.word)}</span>`).join('');
-      parts.push(`<div class="settle-section"><h4>Showing up <span class="count">${themes.length} theme${themes.length === 1 ? '' : 's'}</span></h4><div class="settle-themes">${chips}</div></div>`);
+
+    if (smartReady) {
+      const clusters = clusterByEmbedding(embedded, 0.5);
+      const unembedded = dumps.filter(d => !Array.isArray(_dumpEmbedding(d)) || !_dumpEmbedding(d).length);
+      // group singletons together at the end for visual calm
+      const groups = clusters.filter(c => c.items.length > 1);
+      const singletons = clusters.filter(c => c.items.length === 1).flatMap(c => c.items);
+
+      const renderItem = (d) => {
+        const t = _dumpText(d);
+        const icon = detectAction(t) ? '⚡' : (detectQuestion(t) ? '?' : '');
+        const iconHtml = icon ? `<span class="settle-tag" title="${icon === '⚡' ? 'looks like a to-do' : 'looks like a question'}">${icon}</span>` : '';
+        return `<li>${iconHtml}<span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`;
+      };
+
+      for (const c of groups) {
+        const items = c.items.map(renderItem).join('');
+        parts.push(`<div class="settle-section cluster"><h4>${escapeHtml(c.label)} <span class="count">${c.items.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
+      }
+      if (singletons.length) {
+        const items = singletons.map(renderItem).join('');
+        parts.push(`<div class="settle-section cluster solo"><h4>On their own <span class="count">${singletons.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
+      }
+      if (unembedded.length) {
+        const items = unembedded.map(renderItem).join('');
+        parts.push(`<div class="settle-section cluster pending"><h4>Not yet indexed <span class="count">${unembedded.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
+      }
+    } else {
+      // Legacy keyword/heuristic grouping (also used as fallback when clustering is off).
+      const themes = extractThemes(texts);
+      const actions = texts.filter(detectAction);
+      const questions = texts.filter(t => !detectAction(t) && detectQuestion(t));
+
+      if (themes.length) {
+        const chips = themes.map(t => `<span class="settle-theme"><b>${t.n}×</b>${escapeHtml(t.word)}</span>`).join('');
+        parts.push(`<div class="settle-section"><h4>Showing up <span class="count">${themes.length} theme${themes.length === 1 ? '' : 's'}</span></h4><div class="settle-themes">${chips}</div></div>`);
+      }
+      if (actions.length) {
+        const items = actions.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
+        parts.push(`<div class="settle-section"><h4>Looks like to-dos <span class="count">${actions.length}</span></h4><ul class="settle-list actions">${items}</ul></div>`);
+      }
+      if (questions.length) {
+        const items = questions.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
+        parts.push(`<div class="settle-section"><h4>Looks like questions <span class="count">${questions.length}</span></h4><ul class="settle-list questions">${items}</ul></div>`);
+      }
+      const otherTexts = texts.filter(t => !detectAction(t) && !detectQuestion(t));
+      if (otherTexts.length) {
+        const items = otherTexts.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
+        parts.push(`<div class="settle-section"><h4>Everything else <span class="count">${otherTexts.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
+      }
     }
-    if (actions.length) {
-      const items = actions.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
-      parts.push(`<div class="settle-section"><h4>Looks like to-dos <span class="count">${actions.length}</span></h4><ul class="settle-list actions">${items}</ul></div>`);
-    }
-    if (questions.length) {
-      const items = questions.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
-      parts.push(`<div class="settle-section"><h4>Looks like questions <span class="count">${questions.length}</span></h4><ul class="settle-list questions">${items}</ul></div>`);
-    }
-    // everything else
-    const otherTexts = texts.filter(t => !detectAction(t) && !detectQuestion(t));
-    if (otherTexts.length) {
-      const items = otherTexts.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
-      parts.push(`<div class="settle-section"><h4>Everything else <span class="count">${otherTexts.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
-    }
+
     container.innerHTML = parts.join('');
 
     // wire delete buttons
