@@ -797,6 +797,25 @@
     font-size: 14px;
     letter-spacing: 0;
     font-weight: 600;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .settle-section.cluster h4 .cluster-clear {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: color .15s, border-color .15s;
+  }
+  .settle-section.cluster h4 .cluster-clear:hover {
+    color: var(--warn);
+    border-color: var(--warn);
   }
   .settle-section.cluster.solo h4 { color: var(--muted); }
   .settle-section.cluster.pending h4 { color: var(--muted); font-style: italic; }
@@ -3227,7 +3246,9 @@
 
       for (const c of groups) {
         const items = c.items.map(renderItem).join('');
-        parts.push(`<div class="settle-section cluster"><h4>${escapeHtml(c.label)} <span class="count">${c.items.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
+        const textsAttr = escapeHtml(JSON.stringify(c.items.map(_dumpText)));
+        const clearBtn = `<button class="cluster-clear" data-texts="${textsAttr}" data-label="${escapeHtml(c.label)}" title="Clear this group">clear group</button>`;
+        parts.push(`<div class="settle-section cluster"><h4>${escapeHtml(c.label)} <span class="count">${c.items.length}</span>${clearBtn}</h4><ul class="settle-list">${items}</ul></div>`);
       }
       if (singletons.length) {
         const items = singletons.map(renderItem).join('');
@@ -3277,6 +3298,25 @@
           if (typeof renderPark === 'function') renderPark();
           renderSettleSections(); // re-render so counts update
         }
+      });
+    });
+
+    // wire per-cluster "clear group" buttons
+    container.querySelectorAll('.cluster-clear').forEach(b => {
+      b.addEventListener('click', () => {
+        let texts;
+        try { texts = JSON.parse(b.dataset.texts || '[]'); } catch (_) { texts = []; }
+        if (!texts.length) return;
+        const label = b.dataset.label || 'this group';
+        const ok = window.confirm(`Clear all ${texts.length} thoughts in "${label}"?`);
+        if (!ok) return;
+        const before = state.parkList.length;
+        state.parkList = state.parkList.filter(x => !texts.includes(_dumpText(x)));
+        const removed = before - state.parkList.length;
+        save();
+        if (typeof renderPark === 'function') renderPark();
+        renderSettleSections();
+        console.log('[settle] cleared cluster "' + label + '": removed', removed, 'thought(s)');
       });
     });
   }
