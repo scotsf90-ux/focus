@@ -13,17 +13,62 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="One Thing" />
 <style>
-  :root {
+  :root,
+  :root[data-theme="forest"] {
     --bg: #0f1115;
     --panel: #171a21;
     --panel-2: #1f232c;
     --line: #2a2f3a;
     --text: #e8ecf3;
     --muted: #8a93a6;
-    --accent: #ffb84d;
-    --accent-2: #74e0a4;
+    --accent: #ffb84d;     /* amber */
+    --accent-2: #74e0a4;   /* green */
     --warn: #ff7a7a;
     --shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+  :root[data-theme="ocean"] {
+    --bg: #0d1419;
+    --panel: #131c24;
+    --panel-2: #1c2730;
+    --line: #2a3845;
+    --text: #e8ecf3;
+    --muted: #889bb0;
+    --accent: #ff9a7a;     /* coral */
+    --accent-2: #6cd3d3;   /* teal */
+    --warn: #ff7a8e;
+    --shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  :root[data-theme="sand"] {
+    --bg: #16120f;
+    --panel: #1f1a14;
+    --panel-2: #2a231c;
+    --line: #3a3128;
+    --text: #ece6da;
+    --muted: #9c9181;
+    --accent: #f0c468;     /* gold */
+    --accent-2: #a0c08a;   /* sage */
+    --warn: #e88a6a;
+    --shadow: 0 10px 30px rgba(20,15,10,0.45);
+  }
+  :root[data-theme="plum"] {
+    --bg: #131019;
+    --panel: #1c1722;
+    --panel-2: #251f2d;
+    --line: #332b3d;
+    --text: #ece4f0;
+    --muted: #9a8fa8;
+    --accent: #f08aa6;     /* rose */
+    --accent-2: #8ed8b8;   /* mint */
+    --warn: #ff86a0;
+    --shadow: 0 10px 30px rgba(15,10,20,0.42);
+  }
+  :root, :root[data-theme] {
+    /* smooth color transitions when theme changes */
+    transition: background-color 0.6s ease;
+  }
+  /* extra elements that need to ease too */
+  body, .card, button, .pill {
+    transition: background 0.6s ease, color 0.4s ease, border-color 0.4s ease;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -1492,6 +1537,14 @@
     <button class="icon-btn close" data-close="settings" aria-label="Close settings">✕</button>
     <h2 id="settingsTitle">Settings</h2>
 
+    <h3>Theme <span class="small">(color story)</span></h3>
+    <div id="themeRow" class="energy-row">
+      <button data-theme="forest">forest</button>
+      <button data-theme="ocean">ocean</button>
+      <button data-theme="sand">sand</button>
+      <button data-theme="plum">plum</button>
+    </div>
+
     <h3 style="display:flex; align-items:center; gap:8px;">
       Ambient layer <span class="small">(sky · weather · tree)</span>
       <button id="ambientHelpBtn" class="icon-btn" type="button" aria-label="How the ambient layer works" aria-expanded="false" style="width:24px; height:24px; font-size:13px; margin-left:4px;">?</button>
@@ -1685,6 +1738,7 @@
   state.ambient.type = 'off';
   state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
   state.onboarded ??= false;
+  state.theme ??= 'forest'; // 'forest' | 'ocean' | 'sand' | 'plum'
   state.fileSync ??= { fileName: null, lastSyncedAt: null };
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
   state.alarmLastFiredAt ??= null;
@@ -3058,6 +3112,23 @@
       btn.setAttribute('aria-expanded', String(isHidden));
     };
   }
+
+  // theme pill group wiring
+  function applyTheme() {
+    const t = (state.theme && ['forest','ocean','sand','plum'].includes(state.theme)) ? state.theme : 'forest';
+    document.documentElement.setAttribute('data-theme', t);
+  }
+  applyTheme();
+  document.querySelectorAll('#themeRow button').forEach(b => {
+    b.classList.toggle('active', state.theme === b.dataset.theme);
+    b.onclick = () => {
+      state.theme = b.dataset.theme;
+      save();
+      document.querySelectorAll('#themeRow button').forEach(x =>
+        x.classList.toggle('active', state.theme === x.dataset.theme));
+      applyTheme();
+    };
+  });
 
   // ambient layer pill group wiring
   document.querySelectorAll('#ambientLayerRow button').forEach(b => {
