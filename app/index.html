@@ -3326,11 +3326,33 @@
     $('settleOverlay').classList.add('show');
   }
 
-  // settle button visibility — only show when there's something to settle
+  // settle button visibility + smart-cluster preview label
+  // When clustering is on and clusters have formed, tease the top 2 cluster labels
+  // in the button itself — "Settle · sister · sleep" — so users see the value
+  // before they open the modal.
   function refreshSettleButton() {
     const btn = $('settleBtn');
     if (!btn) return;
-    btn.hidden = (state.parkList || []).length < 2; // appears once you've parked 2+
+    const dumps = state.parkList || [];
+    btn.hidden = dumps.length < 2;
+    if (btn.hidden) return;
+    let label = `Settle (${dumps.length})`;
+    try {
+      const embedded = dumps.filter(d => Array.isArray(_dumpEmbedding(d)) && _dumpEmbedding(d).length);
+      const smartReady = !!(state.ml && state.ml.enabled) && (embedded.length / dumps.length) >= 0.8;
+      if (smartReady) {
+        const clusters = clusterByEmbedding(embedded, 0.5);
+        const groups = clusters.filter(c => c.items.length > 1).slice(0, 2);
+        if (groups.length) {
+          const tease = groups.map(c => {
+            const l = c.label;
+            return l.length > 12 ? l.slice(0, 11) + '…' : l;
+          }).join(' · ');
+          label = `Settle · ${tease}`;
+        }
+      }
+    } catch (_) { /* fall back to plain label */ }
+    btn.textContent = label;
   }
   if ($('settleBtn')) $('settleBtn').onclick = openSettle;
 
