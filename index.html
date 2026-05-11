@@ -28,12 +28,22 @@
   body {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     color: var(--text);
+    background: var(--bg);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+    position: relative;
+  }
+  /* sky gradient as fixed full-viewport pseudo-layer (mobile-safe) */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background:
       radial-gradient(1200px 600px at 70% -10%, rgba(28,34,48,0.55) 0%, rgba(15,17,21,0) 60%),
       linear-gradient(to bottom, #1d1c36 0%, #3a2a55 30%, #5a3060 55%, #c46050 100%);
-    background-attachment: fixed;
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.55;
   }
   .wrap {
     max-width: 920px;
