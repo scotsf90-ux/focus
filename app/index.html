@@ -515,6 +515,10 @@
     padding: 28px;
     max-width: 560px;
     width: 100%;
+    /* Cap height so content scrolls inside the modal when settings/week overflow */
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     transform: scale(.96) translateY(8px);
     opacity: 0;
     transition: transform .28s cubic-bezier(.2,.7,.2,1), opacity .22s ease;
@@ -539,7 +543,15 @@
   }
   .modal .actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
   .modal .small { font-size: 12px; color: var(--muted); }
-  .modal .close { float: right; }
+  .modal .close {
+    position: sticky;
+    top: 0;
+    float: right;
+    z-index: 2;
+    /* subtle backdrop so the X stays legible against scrolled content */
+    background: var(--panel);
+    border-radius: 50%;
+  }
   .modal h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin: 16px 0 8px; font-weight: 600; }
   .modal label { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0; }
   .modal input[type=number], .modal input[type=time], .modal input[type=text], .modal input[type=tel], .modal select {
