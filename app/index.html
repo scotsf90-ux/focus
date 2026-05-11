@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>One Thing — focus tool</title>
-<meta name="description" content="A calm focus companion for ADHD desk-workers who love being outside and around people." />
+<title>Vesper — a kinder Pomodoro</title>
+<meta name="description" content="A kinder Pomodoro for people who also have a life." />
 <meta name="theme-color" content="#0f1115" />
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="One Thing" />
+<meta name="apple-mobile-web-app-title" content="Vesper" />
 <style>
   :root,
   :root[data-theme="forest"] {
@@ -1397,7 +1397,7 @@
 <div class="app">
   <header>
     <div class="brand-block">
-      <div class="brand">One Thing</div>
+      <div class="brand">Vesper</div>
       <div id="greeting" class="greeting">Hello.</div>
     </div>
     <div class="right">
@@ -1606,7 +1606,7 @@
       <div id="fileSyncSetup">
         <button id="fileSyncPick" class="primary" style="font-size: 13px; padding: 7px 14px;">Pick a sync file</button>
         <div class="small" style="color: var(--muted); margin-top: 8px; line-height: 1.4;">
-          Tip: navigate to <code>~/Library/Mobile Documents/com~apple~CloudDocs/</code> (iCloud Drive) and save as <code>one-thing-sync.json</code>. Then on your iPhone/iPad/other Mac, browse to the same file.
+          Tip: navigate to <code>~/Library/Mobile Documents/com~apple~CloudDocs/</code> (iCloud Drive) and save as <code>vesper-sync.json</code>. Then on your iPhone/iPad/other Mac, browse to the same file.
         </div>
       </div>
       <!-- state 2: connected -->
@@ -1802,7 +1802,7 @@
 
     if (endsAt && secLeft <= 0) onTimerEnd();
 
-    document.title = (endsAt ? (mode==='break'?'☕ ':'● ') : '○ ') + fmt(secLeft) + ' — One Thing';
+    document.title = (endsAt ? (mode==='break'?'☕ ':'● ') : '○ ') + fmt(secLeft) + ' — Vesper';
   }
 
   function start() {
@@ -2475,10 +2475,10 @@
       try { parsed = JSON.parse(e.target.result); }
       catch (_) { setDataStatus('✕ That file isn\'t valid JSON.', 'err'); return; }
       if (!parsed || parsed.app !== 'one-thing' || typeof parsed.data !== 'object') {
-        setDataStatus('✕ Not a One Thing export.', 'err');
+        setDataStatus('✕ Not a Vesper export.', 'err');
         return;
       }
-      const ok = window.confirm('Replace your current One Thing data with this file? This cannot be undone.');
+      const ok = window.confirm('Replace your current Vesper data with this file? This cannot be undone.');
       if (!ok) { setDataStatus('Import cancelled.', 'muted'); return; }
       try {
         localStorage.setItem('onething.v2', JSON.stringify(parsed.data));
@@ -2506,11 +2506,11 @@
     const lines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//One Thing//Focus tool//EN',
+      'PRODID:-//Vesper//Focus tool//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
-      'X-WR-CALNAME:One Thing — focus blocks',
-      'X-WR-CALDESC:Completed focus blocks logged in your One Thing tool.'
+      'X-WR-CALNAME:Vesper — focus blocks',
+      'X-WR-CALDESC:Completed focus blocks logged in your Vesper tool.'
     ];
     const now = _icsDate(Date.now());
     const hist = state.history || {};
@@ -2528,7 +2528,7 @@
           lines.push('DTSTART:' + _icsDate(startTs));
           lines.push('DTEND:' + _icsDate(endTs));
           lines.push('SUMMARY:Focus block (' + minutes + ' min)');
-          lines.push('CATEGORIES:One Thing,Focus');
+          lines.push('CATEGORIES:Vesper,Focus');
           lines.push('END:VEVENT');
           count++;
         }
@@ -2544,7 +2544,7 @@
           lines.push('DTSTART:' + _icsDate(startTs));
           lines.push('DTEND:' + _icsDate(endTs));
           lines.push('SUMMARY:Focus block (approx)');
-          lines.push('CATEGORIES:One Thing,Focus');
+          lines.push('CATEGORIES:Vesper,Focus');
           lines.push('END:VEVENT');
           count++;
         }
@@ -3762,7 +3762,7 @@
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (!parsed || parsed.app !== 'one-thing' || !parsed.data) {
-        setSyncStatus('Sync file isn\'t a One Thing file — disconnect to switch.', 'err');
+        setSyncStatus('Sync file isn\'t a Vesper file — disconnect to switch.', 'err');
         return false;
       }
       const fileTime = parsed.syncedAt || 0;
@@ -3809,7 +3809,7 @@
     }
     try {
       const handle = await window.showSaveFilePicker({
-        suggestedName: 'one-thing-sync.json',
+        suggestedName: 'vesper-sync.json',
         types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
       });
       // Try reading first — if user picked an existing file, adopt it.
@@ -3820,7 +3820,7 @@
           const txt = await f.text();
           const parsed = JSON.parse(txt);
           if (parsed && parsed.app === 'one-thing' && parsed.data) {
-            const ok = window.confirm('This file already has One Thing data from ' + (parsed.syncedAt ? new Date(parsed.syncedAt).toLocaleString() : 'unknown') + '. Replace your local data with it?');
+            const ok = window.confirm('This file already has Vesper data from ' + (parsed.syncedAt ? new Date(parsed.syncedAt).toLocaleString() : 'unknown') + '. Replace your local data with it?');
             if (ok) {
               for (const k of Object.keys(parsed.data)) state[k] = parsed.data[k];
               adopted = true;
