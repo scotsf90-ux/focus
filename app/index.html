@@ -721,6 +721,71 @@
   }
   #printHeader { display: none; }
 
+  /* settle-thoughts review modal sections */
+  .settle-section { margin-top: 18px; }
+  .settle-section h4 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    font-weight: 600;
+    color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .settle-section h4 .count {
+    color: var(--accent-2);
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+  }
+  .settle-themes {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .settle-theme {
+    background: rgba(116,224,164,0.1);
+    border: 1px solid rgba(116,224,164,0.25);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .settle-theme b { color: var(--accent-2); margin-right: 4px; }
+  .settle-list { list-style: none; padding: 0; margin: 0; }
+  .settle-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: var(--panel-2);
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .settle-list.actions li { border-left: 3px solid var(--accent); }
+  .settle-list.questions li { border-left: 3px solid var(--accent-2); }
+  .settle-list li .text { flex: 1; }
+  .settle-list li .del {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .settle-list li .del:hover { color: var(--warn); }
+  .settle-empty {
+    color: var(--muted);
+    font-style: italic;
+    font-size: 13px;
+    padding: 8px 0;
+  }
+
   /* insights line in the week modal */
   .insights {
     margin-top: 12px;
@@ -1456,6 +1521,9 @@
         No stray thoughts yet.<br>
         They'll wait here when something pops up — so you can keep working.
       </div>
+      <div class="row" style="margin-top: 10px; justify-content: flex-end;">
+        <button id="settleBtn" class="ghost" style="font-size: 12px; padding: 5px 10px;" hidden>Settle your thoughts</button>
+      </div>
     </section>
 
     <section class="card">
@@ -1654,6 +1722,19 @@
 
     <div class="actions" style="justify-content:flex-end; margin-top:18px;">
       <button id="settingsDone" class="primary">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTLE THOUGHTS overlay -->
+<div id="settleOverlay" class="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settleTitle">
+    <button class="icon-btn close" data-close="settle" aria-label="Close">✕</button>
+    <h2 id="settleTitle">Settle your thoughts</h2>
+    <p class="small" id="settleIntro">Pattern-match across what you've parked. Keep what matters, let the rest go.</p>
+    <div id="settleSections"></div>
+    <div class="actions" style="justify-content:flex-end; margin-top:18px;">
+      <button data-close="settle" class="primary">Done</button>
     </div>
   </div>
 </div>
@@ -2169,7 +2250,7 @@
   setInterval(cutoffTick, 30 * 1000);
 
   function anyOverlayOpen() {
-    return ['overlay','cutoffOverlay','settingsOverlay','weekOverlay'].some(id => $(id).classList.contains('show'));
+    return ['overlay','cutoffOverlay','settingsOverlay','weekOverlay','settleOverlay'].some(id => $(id).classList.contains('show'));
   }
 
   // --- streak counter helper with pop animation on increment ---
@@ -2216,7 +2297,7 @@
   // --- focus management for accessibility ---
   // observes .show class on every overlay; on open, focus first focusable inside
   // and remember the trigger; on close, restore focus to the trigger.
-  ['overlay', 'cutoffOverlay', 'settingsOverlay', 'weekOverlay'].forEach(id => {
+  ['overlay', 'cutoffOverlay', 'settingsOverlay', 'weekOverlay', 'settleOverlay'].forEach(id => {
     const el = $(id);
     if (!el) return;
     let wasShown = false;
@@ -2805,6 +2886,143 @@
   }
   setInterval(() => fetchWeather(false), 30 * 60 * 1000);
 
+  // ============================================================
+  // SETTLE-YOUR-THOUGHTS — deterministic pattern review of dumps
+  // No AI dependency. Surfaces themes (repeated keywords), looks-like-
+  // actions (starts with action verb), and looks-like-questions
+  // (starts with question word or contains ?).
+  // ============================================================
+
+  const _STOPWORDS = new Set([
+    'the','a','an','i','to','and','of','my','is','it','in','for','on','at','by',
+    'with','this','that','as','be','do','have','was','are','will','can','could',
+    'should','would','about','from','if','so','but','or','not','no','yes','just',
+    'only','very','too','more','most','need','want','also','then','now','out',
+    'up','down','over','under','again','really','still','some','any','all','what',
+    'when','where','how','why','who','am','me','you','your','he','she','they',
+    'we','them','us','his','her','its','our','their','were','been','being','has',
+    'had','having','than','because','while','though','here','there','these','those',
+    'into','one','two','three','get','got','make','made','take','took','give','gave',
+    'go','went','come','came','put','set','say','said','tell','told','feel','felt',
+    'know','knew','think','thought','see','saw','want','wanted'
+  ]);
+  const _ACTION_VERBS = new Set([
+    'call','text','email','message','dm','write','send','reply','schedule','book',
+    'buy','order','pay','pick','grab','fix','update','review','read','watch','listen',
+    'finish','start','make','create','prepare','plan','reserve','cancel','check',
+    'ask','tell','remind','remember','add','remove','delete','clean','wash','organize',
+    'file','find','search','look','meet','talk','draft','ship','build','test','deploy',
+    'commit','push','pull','merge','revise','edit','rename','rewrite','reach',
+    'follow','followup','sign','renew','submit','apply','register','enroll',
+    'pack','load','unload','assemble','install','uninstall','configure','setup'
+  ]);
+  const _Q_STARTERS = new Set([
+    'why','how','what','when','where','who','should','could','would','can','will',
+    'do','does','did','is','are','was','were','am','have','has','had'
+  ]);
+
+  function _tokenize(text) {
+    return String(text || '').toLowerCase()
+      .replace(/[^\w\s']/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 3 && !_STOPWORDS.has(w));
+  }
+  function _firstWord(text) {
+    const m = String(text || '').trim().toLowerCase().match(/^[a-z']+/);
+    return m ? m[0] : '';
+  }
+  function detectAction(text) {
+    return _ACTION_VERBS.has(_firstWord(text));
+  }
+  function detectQuestion(text) {
+    if (String(text || '').includes('?')) return true;
+    const fw = _firstWord(text);
+    return _Q_STARTERS.has(fw);
+  }
+  function extractThemes(dumps) {
+    const counts = Object.create(null);
+    for (const d of dumps) {
+      const seen = new Set();
+      for (const w of _tokenize(d)) {
+        if (seen.has(w)) continue;
+        seen.add(w);
+        counts[w] = (counts[w] || 0) + 1;
+      }
+    }
+    return Object.entries(counts)
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 6)
+      .map(([word, n]) => ({ word, n }));
+  }
+
+  function renderSettleSections() {
+    const container = $('settleSections');
+    if (!container) return;
+    const dumps = (state.parkList || []).slice();
+    const intro = $('settleIntro');
+    if (dumps.length === 0) {
+      if (intro) intro.textContent = 'Nothing parked. Come back when something pops up.';
+      container.innerHTML = '<div class="settle-empty">No thoughts in the parking lot right now.</div>';
+      return;
+    }
+    if (intro) intro.textContent = `${dumps.length} thought${dumps.length === 1 ? '' : 's'} parked. Keep what matters, let the rest go.`;
+
+    const themes = extractThemes(dumps);
+    const actions = dumps.filter(detectAction);
+    const questions = dumps.filter(d => !detectAction(d) && detectQuestion(d));
+
+    const parts = [];
+    if (themes.length) {
+      const chips = themes.map(t => `<span class="settle-theme"><b>${t.n}×</b>${escapeHtml(t.word)}</span>`).join('');
+      parts.push(`<div class="settle-section"><h4>Showing up <span class="count">${themes.length} theme${themes.length === 1 ? '' : 's'}</span></h4><div class="settle-themes">${chips}</div></div>`);
+    }
+    if (actions.length) {
+      const items = actions.map(d => `<li><span class="text">${escapeHtml(d)}</span><button class="del" data-text="${escapeHtml(d)}" title="Delete">×</button></li>`).join('');
+      parts.push(`<div class="settle-section"><h4>Looks like to-dos <span class="count">${actions.length}</span></h4><ul class="settle-list actions">${items}</ul></div>`);
+    }
+    if (questions.length) {
+      const items = questions.map(d => `<li><span class="text">${escapeHtml(d)}</span><button class="del" data-text="${escapeHtml(d)}" title="Delete">×</button></li>`).join('');
+      parts.push(`<div class="settle-section"><h4>Looks like questions <span class="count">${questions.length}</span></h4><ul class="settle-list questions">${items}</ul></div>`);
+    }
+    // everything else
+    const otherDumps = dumps.filter(d => !detectAction(d) && !detectQuestion(d));
+    if (otherDumps.length) {
+      const items = otherDumps.map(d => `<li><span class="text">${escapeHtml(d)}</span><button class="del" data-text="${escapeHtml(d)}" title="Delete">×</button></li>`).join('');
+      parts.push(`<div class="settle-section"><h4>Everything else <span class="count">${otherDumps.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
+    }
+    container.innerHTML = parts.join('');
+
+    // wire delete buttons
+    container.querySelectorAll('.del').forEach(b => {
+      b.addEventListener('click', () => {
+        const text = b.dataset.text;
+        // decode the same escapeHtml applied above (& -> &amp; etc.)
+        const txt = text.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+        const idx = (state.parkList || []).findIndex(x => x === txt);
+        if (idx >= 0) {
+          state.parkList.splice(idx, 1);
+          save();
+          if (typeof renderPark === 'function') renderPark();
+          renderSettleSections(); // re-render so counts update
+        }
+      });
+    });
+  }
+
+  function openSettle() {
+    renderSettleSections();
+    $('settleOverlay').classList.add('show');
+  }
+
+  // settle button visibility — only show when there's something to settle
+  function refreshSettleButton() {
+    const btn = $('settleBtn');
+    if (!btn) return;
+    btn.hidden = (state.parkList || []).length < 2; // appears once you've parked 2+
+  }
+  if ($('settleBtn')) $('settleBtn').onclick = openSettle;
+
   // --- insights: read patterns from event-level history ---
   function _fmtHour(h) {
     const ampm = h < 12 ? 'am' : 'pm';
@@ -3048,6 +3266,7 @@
       const which = el.dataset.close;
       if (which === 'settings') closeSettings();
       if (which === 'week')     $('weekOverlay').classList.remove('show');
+      if (which === 'settle')   $('settleOverlay').classList.remove('show');
     });
   });
 
@@ -3088,6 +3307,7 @@
     if (empty) empty.classList.toggle('hidden', state.parkList.length > 0);
     // brain dumps drop leaves at the tree's base — re-render
     if (typeof renderTree === 'function') renderTree();
+    if (typeof refreshSettleButton === 'function') refreshSettleButton();
   }
   $('parkInput').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.value.trim()) {
@@ -3173,6 +3393,7 @@
       else if ($('cutoffOverlay').classList.contains('show')) $('cutoffOverlay').classList.remove('show');
       else if ($('settingsOverlay').classList.contains('show')) closeSettings();
       else if ($('weekOverlay').classList.contains('show')) $('weekOverlay').classList.remove('show');
+      else if ($('settleOverlay').classList.contains('show')) $('settleOverlay').classList.remove('show');
     }
     if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT'
         && !anyOverlayOpen()) {
