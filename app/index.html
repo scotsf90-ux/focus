@@ -1833,6 +1833,10 @@
   state.task ??= '';
   state.duration ??= 25;
   state.parkList ??= [];
+  // Migrate string[] → {text, ts, embedding}[] (iter 56). Backward-compat.
+  state.parkList = state.parkList.map(x =>
+    typeof x === 'string' ? { text: x, ts: Date.now(), embedding: null } : x
+  );
   state.energy ??= null;
   state.contacts ??= [];
   state.alarm ??= { enabled: false, intervalMin: 90 };
@@ -3057,10 +3061,53 @@
     return Array.from(out.data);
   }
 
+  // Brain-dump accessors (post iter 56 shape migration). Tolerate both
+  // legacy string entries and {text, ts, embedding} objects so we never crash
+  // mid-migration or on partially-imported data.
+  function _dumpText(d) { return typeof d === 'string' ? d : (d && d.text) || ''; }
+  function _dumpEmbedding(d) { return (typeof d === 'object' && d && Array.isArray(d.embedding)) ? d.embedding : null; }
+
+  // Fire-and-forget: if smart clustering is enabled, embed a freshly-added
+  // dump and persist the vector inline. Tolerates model not yet loaded, network
+  // failure, etc. — embedding stays null and clustering falls back to keyword.
+  function embedDumpInPlace(dump) {
+    if (!dump || !state.ml || !state.ml.enabled) return;
+    if (Array.isArray(dump.embedding) && dump.embedding.length) return;
+    embedText(_dumpText(dump))
+      .then(v => {
+        // Re-locate by ts in case the array was reordered or pruned mid-flight.
+        const idx = (state.parkList || []).findIndex(x => x && x.ts === dump.ts && _dumpText(x) === _dumpText(dump));
+        if (idx >= 0) {
+          state.parkList[idx].embedding = v;
+          save();
+        }
+      })
+      .catch(err => { console.warn('[ML] embed failed for dump:', err && err.message); });
+  }
+
+  // Backfill: embed any dumps that don't yet have a vector. Used after the
+  // user first turns smart clustering on so existing dumps get clustered too.
+  async function backfillDumpEmbeddings() {
+    if (!state.ml || !state.ml.enabled) return;
+    const pending = (state.parkList || []).filter(d => !Array.isArray(d.embedding) || !d.embedding.length);
+    if (!pending.length) return;
+    for (const d of pending) {
+      try {
+        const v = await embedText(_dumpText(d));
+        d.embedding = v;
+        save();
+      } catch (err) {
+        console.warn('[ML] backfill embed failed:', err && err.message);
+        break; // bail on first error rather than spam
+      }
+    }
+  }
+
   function renderSettleSections() {
     const container = $('settleSections');
     if (!container) return;
     const dumps = (state.parkList || []).slice();
+    const texts = dumps.map(_dumpText);
     const intro = $('settleIntro');
     if (dumps.length === 0) {
       if (intro) intro.textContent = 'Nothing parked. Come back when something pops up.';
@@ -3069,9 +3116,9 @@
     }
     if (intro) intro.textContent = `${dumps.length} thought${dumps.length === 1 ? '' : 's'} parked. Keep what matters, let the rest go.`;
 
-    const themes = extractThemes(dumps);
-    const actions = dumps.filter(detectAction);
-    const questions = dumps.filter(d => !detectAction(d) && detectQuestion(d));
+    const themes = extractThemes(texts);
+    const actions = texts.filter(detectAction);
+    const questions = texts.filter(t => !detectAction(t) && detectQuestion(t));
 
     const parts = [];
     if (themes.length) {
@@ -3079,18 +3126,18 @@
       parts.push(`<div class="settle-section"><h4>Showing up <span class="count">${themes.length} theme${themes.length === 1 ? '' : 's'}</span></h4><div class="settle-themes">${chips}</div></div>`);
     }
     if (actions.length) {
-      const items = actions.map(d => `<li><span class="text">${escapeHtml(d)}</span><button class="del" data-text="${escapeHtml(d)}" title="Delete">×</button></li>`).join('');
+      const items = actions.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
       parts.push(`<div class="settle-section"><h4>Looks like to-dos <span class="count">${actions.length}</span></h4><ul class="settle-list actions">${items}</ul></div>`);
     }
     if (questions.length) {
-      const items = questions.map(d => `<li><span class="text">${escapeHtml(d)}</span><button class="del" data-text="${escapeHtml(d)}" title="Delete">×</button></li>`).join('');
+      const items = questions.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
       parts.push(`<div class="settle-section"><h4>Looks like questions <span class="count">${questions.length}</span></h4><ul class="settle-list questions">${items}</ul></div>`);
     }
     // everything else
-    const otherDumps = dumps.filter(d => !detectAction(d) && !detectQuestion(d));
-    if (otherDumps.length) {
-      const items = otherDumps.map(d => `<li><span class="text">${escapeHtml(d)}</span><button class="del" data-text="${escapeHtml(d)}" title="Delete">×</button></li>`).join('');
-      parts.push(`<div class="settle-section"><h4>Everything else <span class="count">${otherDumps.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
+    const otherTexts = texts.filter(t => !detectAction(t) && !detectQuestion(t));
+    if (otherTexts.length) {
+      const items = otherTexts.map(t => `<li><span class="text">${escapeHtml(t)}</span><button class="del" data-text="${escapeHtml(t)}" title="Delete">×</button></li>`).join('');
+      parts.push(`<div class="settle-section"><h4>Everything else <span class="count">${otherTexts.length}</span></h4><ul class="settle-list">${items}</ul></div>`);
     }
     container.innerHTML = parts.join('');
 
@@ -3100,7 +3147,7 @@
         const text = b.dataset.text;
         // decode the same escapeHtml applied above (& -> &amp; etc.)
         const txt = text.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
-        const idx = (state.parkList || []).findIndex(x => x === txt);
+        const idx = (state.parkList || []).findIndex(x => _dumpText(x) === txt);
         if (idx >= 0) {
           state.parkList.splice(idx, 1);
           save();
@@ -3395,7 +3442,16 @@
       const li = document.createElement('li');
       if (animateFirst && idx === 0) li.classList.add('entering');
       const span = document.createElement('span');
-      span.textContent = item;
+      span.textContent = _dumpText(item);
+      // Embedded dot — subtle visual cue when smart clustering has indexed this dump.
+      if (_dumpEmbedding(item)) {
+        const dot = document.createElement('span');
+        dot.className = 'embedded-dot';
+        dot.title = 'Indexed for smart clustering';
+        dot.textContent = '·';
+        dot.style.cssText = 'color: var(--accent-2); opacity: 0.6; margin-left: 4px; font-weight: 700;';
+        span.appendChild(dot);
+      }
       const x = document.createElement('button');
       x.className = 'x';
       x.textContent = '×';
@@ -3412,9 +3468,24 @@
   }
   $('parkInput').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.value.trim()) {
-      state.parkList.unshift(e.target.value.trim());
+      const dump = { text: e.target.value.trim(), ts: Date.now(), embedding: null };
+      state.parkList.unshift(dump);
       e.target.value = '';
       save(); renderPark(true);
+      // Fire-and-forget embed if smart clustering is on. Re-render park when done
+      // so the embedded-dot appears without user action.
+      if (state.ml && state.ml.enabled) {
+        embedText(dump.text)
+          .then(v => {
+            const idx2 = state.parkList.findIndex(x => x && x.ts === dump.ts && _dumpText(x) === dump.text);
+            if (idx2 >= 0) {
+              state.parkList[idx2].embedding = v;
+              save();
+              renderPark();
+            }
+          })
+          .catch(err => console.warn('[ML] embed failed:', err && err.message));
+      }
     }
   });
   renderPark();
@@ -3512,6 +3583,14 @@
         // smoke test: embed one short string
         const v = await embedText('hello');
         console.log('[ML] ready · embedding length =', v.length);
+        // backfill embeddings for any dumps the user has already parked
+        const pending = (state.parkList || []).filter(d => !Array.isArray(d.embedding) || !d.embedding.length).length;
+        if (pending > 0) {
+          _setMlStatus(`embedding ${pending} parked thought${pending === 1 ? '' : 's'}…`, 'var(--accent-2)');
+          await backfillDumpEmbeddings();
+          _setMlStatus('ready', 'var(--accent-2)');
+          if (typeof renderPark === 'function') renderPark();
+        }
       } catch (_) { /* status already shown */ }
     });
   })();
