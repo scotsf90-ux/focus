@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Privacy — Vesper</title>
+<meta name="description" content="Vesper privacy policy. Short version: I don't collect anything." />
+<meta name="theme-color" content="#0f1115" />
+<link rel="icon" type="image/png" sizes="32x32" href="app/favicon-32.png" />
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --text:#e8ecf3; --muted:#8a93a6; --accent:#ffb84d; --accent-2:#74e0a4; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: 'Charter','Iowan Old Style','Sitka Text','PT Serif',Georgia,serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.65; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 56px 24px 80px; }
+  nav { margin-bottom: 40px; font-size: 13px; font-family: -apple-system, sans-serif; }
+  nav a { color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--text); }
+  nav .brand { color: var(--text); font-weight: 600; }
+  nav .brand .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
+  h1 { font-size: 32px; font-weight: 500; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 28px; font-family: -apple-system, sans-serif; }
+  h2 { font-size: 19px; font-weight: 600; margin: 36px 0 10px; }
+  p { margin: 0 0 14px; }
+  ul { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 6px; }
+  code { background: var(--panel); padding: 1px 6px; border-radius: 4px; font-size: 0.92em; font-family: ui-monospace, monospace; }
+  .tldr { background: rgba(116,224,164,0.06); border: 1px solid rgba(116,224,164,0.2); border-radius: 10px; padding: 16px 20px; margin-bottom: 28px; }
+  .tldr b { color: var(--accent-2); }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); font-family: -apple-system, sans-serif; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a class="brand" href="/focus/"><span class="dot"></span>Vesper</a> &nbsp;·&nbsp; <a href="/focus/">home</a> &nbsp;·&nbsp; <a href="/focus/app/">open the tool</a></nav>
+
+  <h1>Privacy</h1>
+  <div class="meta">Last updated: May 11, 2026</div>
+
+  <div class="tldr">
+    <p><b>Short version:</b> Vesper is a single HTML file running in your browser. I don't have servers, I don't have analytics, I don't see what you type. Your data lives in your browser's local storage and — if you turn on sync — in a JSON file you put in your own cloud folder. That's the whole thing.</p>
+  </div>
+
+  <h2>What Vesper stores about you</h2>
+  <p>Everything you do in Vesper — your task names, focus blocks, brain-dump entries, energy check-ins, intentions, reflections, contacts, settings — is saved to <code>localStorage</code> in your own browser. Nothing leaves your device unless you explicitly turn on a feature that sends it somewhere.</p>
+
+  <h2>Features that touch the network</h2>
+  <p>These are all opt-in. Vesper works completely offline without any of them.</p>
+  <ul>
+    <li><b>Weather backgrounds</b> — if you grant location permission, your latitude and longitude (rounded to 4 decimals, ~10m precision) are sent to <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> to fetch current weather. Open-Meteo is a free, open-source weather API that does not require an account. They publish their own privacy practices.</li>
+    <li><b>File-based sync</b> — if you pick a sync file, the file lives in whatever cloud folder you put it in (iCloud Drive, Dropbox, Google Drive, OneDrive). Vesper writes your data there. The privacy of that file is governed by your cloud provider's terms. The file is plain JSON; I recommend keeping it in a private folder.</li>
+    <li><b>Browser notifications</b> — if you enable browser notifications, alerts are scheduled and fired by your browser. No external service is involved.</li>
+    <li><b>Service worker</b> — Vesper installs a service worker for offline use. It caches the app's HTML and icons. It does not send anything anywhere.</li>
+  </ul>
+
+  <h2>What I do not collect</h2>
+  <ul>
+    <li>No analytics, no telemetry, no usage tracking</li>
+    <li>No accounts, no email addresses, no passwords</li>
+    <li>No cookies, no fingerprinting, no advertising IDs</li>
+    <li>No connection to a backend I control — I don't run any server</li>
+  </ul>
+
+  <h2>If you support Vesper via GitHub Sponsors</h2>
+  <p>If you choose to tip via the "Support Vesper" link in Settings, you'll be sent to <a href="https://github.com/sponsors" target="_blank" rel="noopener" style="color: var(--accent-2);">GitHub Sponsors</a>. That transaction is between you and GitHub. I only see what GitHub shows me: your username, your tier, and any public note you choose to send. Their privacy policy applies.</p>
+
+  <h2>Data deletion</h2>
+  <p>To delete everything, open Settings → Your data and use <b>Export JSON</b> (if you want a backup first), then either clear your browser's storage for the site, or delete your localStorage entry called <code>onething.v2</code>. If you have a sync file, delete the file from your cloud folder. That's it — there's nothing for me to delete on a server because there is no server.</p>
+
+  <h2>Contact</h2>
+  <p>If you have a privacy question, open an issue at <a href="https://github.com/scotsf90-ux/focus" target="_blank" rel="noopener" style="color: var(--accent-2);">github.com/scotsf90-ux/focus</a>.</p>
+
+  <h2>Changes</h2>
+  <p>If Vesper ever does collect something — for instance if a future paid feature requires it — I'll update this page and add a clear notice in the app before turning it on.</p>
+
+  <footer>
+    Vesper · made by Scott · <a href="/focus/terms.html">Terms</a> · <a href="https://github.com/scotsf90-ux/focus" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+</div>
+</body>
+</html>
