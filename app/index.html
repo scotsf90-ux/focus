@@ -1695,6 +1695,22 @@
       <div id="syncStatus" class="small" style="color: var(--muted); margin-top: 8px; min-height: 1em;"></div>
     </div>
 
+    <h3>Smart clustering <span class="small">(experimental · ~25 MB one-time download)</span></h3>
+    <div class="small" style="color: var(--muted); margin: 0 0 8px; line-height: 1.4;">
+      Opt-in. Loads a tiny sentence-embedding model into your browser so the <b>Settle your thoughts</b> view can group dumps by meaning, not just shared words. The model runs entirely on-device — nothing about your thoughts is sent anywhere. Model files come from a public CDN once, then cache offline.
+    </div>
+    <label><input type="checkbox" id="mlEnabled" /> Enable smart clustering</label>
+    <div class="row" style="margin-top:6px;">
+      <span class="small">Status:</span>
+      <span id="mlStatus" class="small"><b style="color: var(--muted);">off</b></span>
+    </div>
+    <div id="mlProgressWrap" hidden style="margin-top:8px;">
+      <div style="background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 8px; overflow: hidden;">
+        <div id="mlProgressBar" style="background: var(--accent-2); height: 100%; width: 0%; transition: width 0.2s;"></div>
+      </div>
+      <div id="mlProgressText" class="small" style="color: var(--muted); margin-top: 4px;"></div>
+    </div>
+
     <h3>Help</h3>
     <div class="row">
       <button id="replayTourBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Replay quick tour</button>
@@ -1828,6 +1844,7 @@
   state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
   state.onboarded ??= false;
   state.theme ??= 'forest'; // 'forest' | 'ocean' | 'sand' | 'plum'
+  state.ml ??= { enabled: false, modelReady: false, lastError: null };
   state.fileSync ??= { fileName: null, lastSyncedAt: null };
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
   state.alarmLastFiredAt ??= null;
@@ -2956,6 +2973,90 @@
       .map(([word, n]) => ({ word, n }));
   }
 
+  // === Smart clustering (Transformers.js, opt-in) ===
+  // Lazy dynamic import of @huggingface/transformers from a public CDN.
+  // Caches the pipeline globally so we don't reload on every Settle open.
+  const ML_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
+  const ML_MODEL = 'Xenova/all-MiniLM-L6-v2';
+  let _mlPipelinePromise = null;
+  let _mlPipeline = null;
+
+  function _setMlStatus(label, color = 'var(--muted)') {
+    const el = $('mlStatus');
+    if (el) el.innerHTML = `<b style="color: ${color};">${label}</b>`;
+  }
+  function _setMlProgress(pct, text) {
+    const wrap = $('mlProgressWrap');
+    const bar = $('mlProgressBar');
+    const txt = $('mlProgressText');
+    if (!wrap || !bar || !txt) return;
+    if (pct == null) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    txt.textContent = text || '';
+  }
+
+  async function ensureMLModel() {
+    if (_mlPipeline) return _mlPipeline;
+    if (_mlPipelinePromise) return _mlPipelinePromise;
+    _mlPipelinePromise = (async () => {
+      try {
+        _setMlStatus('loading library…', 'var(--accent-2)');
+        _setMlProgress(2, 'fetching library');
+        const mod = await import(/* @vite-ignore */ ML_CDN);
+        const { pipeline, env } = mod;
+        // Allow remote model fetch; cache lives in browser via Transformers.js
+        if (env) {
+          env.allowLocalModels = false;
+          env.allowRemoteModels = true;
+        }
+        _setMlStatus('downloading model…', 'var(--accent-2)');
+        const pipe = await pipeline('feature-extraction', ML_MODEL, {
+          progress_callback: (p) => {
+            try {
+              if (!p) return;
+              if (p.status === 'progress' && typeof p.progress === 'number') {
+                _setMlProgress(p.progress, `${p.file || 'model'} · ${Math.round(p.progress)}%`);
+              } else if (p.status === 'done') {
+                _setMlProgress(100, `${p.file || 'model'} · done`);
+              } else if (p.status === 'ready') {
+                _setMlProgress(100, 'ready');
+              } else if (p.status === 'initiate') {
+                _setMlProgress(1, `starting ${p.file || ''}`);
+              } else if (p.status === 'download') {
+                _setMlProgress(1, `downloading ${p.file || ''}`);
+              }
+            } catch (_) {}
+          },
+        });
+        _mlPipeline = pipe;
+        state.ml.modelReady = true;
+        state.ml.lastError = null;
+        save();
+        _setMlStatus('ready', 'var(--accent-2)');
+        setTimeout(() => _setMlProgress(null), 1200);
+        return pipe;
+      } catch (err) {
+        _mlPipelinePromise = null;
+        state.ml.modelReady = false;
+        state.ml.lastError = String(err && err.message || err);
+        save();
+        _setMlStatus('failed — see console', 'var(--warn)');
+        _setMlProgress(null);
+        console.error('[ML] model load failed', err);
+        throw err;
+      }
+    })();
+    return _mlPipelinePromise;
+  }
+
+  async function embedText(text) {
+    const pipe = await ensureMLModel();
+    const out = await pipe(String(text || ''), { pooling: 'mean', normalize: true });
+    // Float32Array of length 384
+    return Array.from(out.data);
+  }
+
   function renderSettleSections() {
     const container = $('settleSections');
     if (!container) return;
@@ -3385,6 +3486,35 @@
     setAmbientVolume(Number(e.target.value) / 100);
     save();
   });
+
+  // smart clustering toggle wiring
+  (function wireMLToggle() {
+    const cb = $('mlEnabled');
+    if (!cb) return;
+    cb.checked = !!(state.ml && state.ml.enabled);
+    if (state.ml && state.ml.enabled && state.ml.modelReady) {
+      _setMlStatus('ready (will load on first use)', 'var(--accent-2)');
+    } else if (state.ml && state.ml.enabled) {
+      _setMlStatus('enabled — not yet loaded', 'var(--muted)');
+    } else {
+      _setMlStatus('off', 'var(--muted)');
+    }
+    cb.addEventListener('change', async () => {
+      state.ml.enabled = !!cb.checked;
+      save();
+      if (!cb.checked) {
+        _setMlStatus('off', 'var(--muted)');
+        _setMlProgress(null);
+        return;
+      }
+      try {
+        await ensureMLModel();
+        // smoke test: embed one short string
+        const v = await embedText('hello');
+        console.log('[ML] ready · embedding length =', v.length);
+      } catch (_) { /* status already shown */ }
+    });
+  })();
 
   // keyboard
   document.addEventListener('keydown', e => {
