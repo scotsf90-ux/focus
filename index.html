@@ -609,6 +609,73 @@
   .reflection-item .text { color: var(--text); font-style: italic; }
   .reflection-empty { color: var(--muted); font-size: 12px; font-style: italic; }
 
+  /* print stylesheet — clean weekly-journal artifact */
+  @media print {
+    /* Hide everything except the week modal contents */
+    body * { visibility: hidden !important; }
+    #weekOverlay, #weekOverlay * { visibility: visible !important; }
+    /* Strip dark theme, animation, parallax, ambient */
+    .grain, .hill, .tree-wrap, .weather-overlay, .fireflies, .butterflies,
+    .intention-strip, header, .cutoff-banner, .footer-tip, .app > .card,
+    .tour-overlay { display: none !important; }
+    body {
+      background: white !important;
+      color: #222 !important;
+      animation: none !important;
+      font-family: 'Charter','Iowan Old Style','Georgia',serif !important;
+    }
+    /* Reposition the modal into the page flow as a clean print artifact */
+    #weekOverlay {
+      position: static !important;
+      background: white !important;
+      backdrop-filter: none !important;
+      padding: 0 !important;
+      display: block !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+    }
+    #weekOverlay .modal {
+      position: static !important;
+      background: white !important;
+      border: none !important;
+      box-shadow: none !important;
+      transform: none !important;
+      opacity: 1 !important;
+      padding: 0 !important;
+      max-width: 100% !important;
+      width: 100% !important;
+      color: #222 !important;
+    }
+    #weekOverlay .modal h2,
+    #weekOverlay .modal h4 { color: #111 !important; }
+    #weekOverlay .small,
+    #weekOverlay .insights,
+    #weekOverlay .week-summary { color: #444 !important; }
+    /* Print header with date stamp */
+    #printHeader { display: block !important; margin-bottom: 16px; border-bottom: 1px solid #ccc; padding-bottom: 12px; }
+    #printHeader h1 { margin: 0 0 4px; font-size: 22px; color: #111; font-weight: 600; }
+    #printHeader .meta { font-size: 12px; color: #666; }
+    /* Bar chart: convert dark accent to print-friendly */
+    .week-bar { background: #2a4d36 !important; }
+    .week-col.today .week-bar { background: #5c8a6a !important; }
+    .week-col .day-count, .week-col .day-label { color: #333 !important; }
+    /* Insights box */
+    .insights { background: #f5f7f1 !important; border-color: #ccd !important; }
+    .insights b { color: #2a4d36 !important; }
+    .insights .delta-up { color: #2a7d4a !important; }
+    .insights .delta-down { color: #a23a3a !important; }
+    /* Reflections list */
+    .reflections-list { border-top-color: #ccc !important; }
+    .reflection-item { border-bottom-color: #ddd !important; }
+    .reflection-item .day { color: #2a4d36 !important; }
+    .reflection-item .text { color: #222 !important; }
+    /* Hide controls */
+    .modal .close, .modal .actions, [data-close="week"] { display: none !important; }
+    /* Page sizing */
+    @page { margin: 0.5in; }
+  }
+  #printHeader { display: none; }
+
   /* insights line in the week modal */
   .insights {
     margin-top: 12px;
@@ -1533,13 +1600,18 @@
 <div id="weekOverlay" class="overlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="weekTitle">
     <button class="icon-btn close" data-close="week" aria-label="Close week view">✕</button>
+    <div id="printHeader">
+      <h1>Your week</h1>
+      <div class="meta" id="printDateRange"></div>
+    </div>
     <h2 id="weekTitle">This week</h2>
     <p class="small">Focus blocks per day — last 7 days.</p>
     <div class="week-grid" id="weekGrid"></div>
     <div class="week-summary" id="weekSummary"></div>
     <div class="insights" id="insights"></div>
     <div class="reflections-list" id="reflectionsList"></div>
-    <div class="actions" style="justify-content:flex-end; margin-top:18px;">
+    <div class="actions" style="justify-content:space-between; margin-top:18px;">
+      <button id="printWeekBtn" class="ghost" style="font-size: 13px;">Save as PDF / print</button>
       <button data-close="week" class="primary">Close</button>
     </div>
   </div>
@@ -2758,6 +2830,12 @@
       }
     }
     renderInsights();
+    // Set the print header date range (only visible in print)
+    const printRange = $('printDateRange');
+    if (printRange && days.length) {
+      const fmt = d => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      printRange.textContent = fmt(days[0].date) + ' – ' + fmt(days[days.length - 1].date) + ' · ' + new Date().getFullYear();
+    }
     $('weekOverlay').classList.add('show');
   }
 
@@ -2815,6 +2893,7 @@
   $('settingsBtn').onclick = openSettings;
   $('settingsDone').onclick = closeSettings;
   $('weekBtn').onclick = openWeek;
+  if ($('printWeekBtn')) $('printWeekBtn').onclick = () => window.print();
 
   document.querySelectorAll('[data-close]').forEach(el => {
     el.addEventListener('click', () => {
