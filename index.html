@@ -1583,9 +1583,10 @@
     <div class="small" style="color: var(--muted); margin: 0 0 8px; line-height:1.4;">
       Everything is saved in this browser only. Export to back it up or move it to another device.
     </div>
-    <div class="row" style="gap: 6px;">
+    <div class="row" style="gap: 6px; flex-wrap: wrap;">
       <button id="exportBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Export JSON</button>
       <button id="importBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Import JSON</button>
+      <button id="exportIcsBtn" class="ghost" style="font-size: 13px; padding: 6px 12px;">Export to calendar (.ics)</button>
       <input type="file" id="importInput" accept="application/json,.json" hidden />
     </div>
     <div id="dataStatus" class="small" style="color: var(--muted); margin-top: 8px; min-height: 1em;"></div>
@@ -2436,7 +2437,92 @@
     reader.onerror = () => setDataStatus('✕ Could not read file.', 'err');
     reader.readAsText(file);
   }
+  // .ics calendar export — each completed focus block becomes a VEVENT
+  function _icsDate(ts) {
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return d.getUTCFullYear() +
+           p(d.getUTCMonth() + 1) +
+           p(d.getUTCDate()) + 'T' +
+           p(d.getUTCHours()) +
+           p(d.getUTCMinutes()) +
+           p(d.getUTCSeconds()) + 'Z';
+  }
+  function buildICS() {
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//One Thing//Focus tool//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:One Thing — focus blocks',
+      'X-WR-CALDESC:Completed focus blocks logged in your One Thing tool.'
+    ];
+    const now = _icsDate(Date.now());
+    const hist = state.history || {};
+    let count = 0;
+    for (const date of Object.keys(hist)) {
+      const h = hist[date];
+      if (Array.isArray(h.blocks)) {
+        for (const b of h.blocks) {
+          const minutes = b.minutes || 25;
+          const startTs = b.ts;
+          const endTs = startTs + minutes * 60 * 1000;
+          lines.push('BEGIN:VEVENT');
+          lines.push('UID:' + b.id + '@one-thing');
+          lines.push('DTSTAMP:' + now);
+          lines.push('DTSTART:' + _icsDate(startTs));
+          lines.push('DTEND:' + _icsDate(endTs));
+          lines.push('SUMMARY:Focus block (' + minutes + ' min)');
+          lines.push('CATEGORIES:One Thing,Focus');
+          lines.push('END:VEVENT');
+          count++;
+        }
+      } else if (h.focusBlocks && h.focusBlocks > 0) {
+        // legacy counters — synthesize approximate midday events
+        const baseTs = new Date(date + 'T13:00:00').getTime();
+        for (let i = 0; i < h.focusBlocks; i++) {
+          const startTs = baseTs + i * 30 * 60 * 1000;
+          const endTs = startTs + 25 * 60 * 1000;
+          lines.push('BEGIN:VEVENT');
+          lines.push('UID:legacy-' + date + '-' + i + '@one-thing');
+          lines.push('DTSTAMP:' + now);
+          lines.push('DTSTART:' + _icsDate(startTs));
+          lines.push('DTEND:' + _icsDate(endTs));
+          lines.push('SUMMARY:Focus block (approx)');
+          lines.push('CATEGORIES:One Thing,Focus');
+          lines.push('END:VEVENT');
+          count++;
+        }
+      }
+    }
+    lines.push('END:VCALENDAR');
+    return { ics: lines.join('\r\n'), count };
+  }
+  function exportCalendar() {
+    try {
+      const { ics, count } = buildICS();
+      if (count === 0) {
+        setDataStatus('No focus blocks logged yet — nothing to export.', 'muted');
+        return;
+      }
+      const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'one-thing-' + new Date().toISOString().slice(0, 10) + '.ics';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setDataStatus('✓ Exported ' + count + ' block' + (count === 1 ? '' : 's') + '. Open the file to add to your calendar.', 'ok');
+    } catch (e) {
+      setDataStatus('✕ Export failed: ' + (e.message || e), 'err');
+    }
+  }
+
   if ($('exportBtn')) $('exportBtn').onclick = exportData;
+  if ($('exportIcsBtn')) $('exportIcsBtn').onclick = exportCalendar;
   if ($('importBtn')) $('importBtn').onclick = () => $('importInput').click();
   if ($('importInput')) $('importInput').addEventListener('change', e => {
     importData(e.target.files && e.target.files[0]);
