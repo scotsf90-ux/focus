@@ -4543,7 +4543,7 @@
   // alias the new name for places elsewhere that look for refreshSyncUI
   function refreshSyncUI() { refreshFileSyncUI(); }
 
-  // --- onboarding tour (4 steps, first-time only, replayable from settings) ---
+  // --- onboarding tour (5 steps, first-time only, replayable from settings) ---
   const tourSteps = [
     {
       target: '#taskInput',
@@ -4558,7 +4558,12 @@
     {
       target: '#parkInput',
       title: 'Brain dump',
-      body: "Stray thought? Type it and press Enter. It'll wait here so you can keep working."
+      body: "Stray thought? Type it and press Enter — it parks here so you can keep working."
+    },
+    {
+      target: '#parkList',
+      title: 'Settle your thoughts',
+      body: "Parked a few? A 'Settle' button appears. It groups them so patterns are easy to see. Turn on Smart clustering in settings to group by meaning, not just shared words."
     },
     {
       target: '#treeWrap',
