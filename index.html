@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>One Thing — focus that knows you're a person</title>
+<meta name="description" content="A calm focus companion for ADHD desk workers who need to actually go outside. Pomodoro, but kind." />
+<meta name="theme-color" content="#0f1115" />
+<meta property="og:title" content="One Thing — focus that knows you're a person" />
+<meta property="og:description" content="A calm focus companion for ADHD desk workers who need to actually go outside." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://scotsf90-ux.github.io/focus/" />
+<link rel="icon" type="image/png" sizes="32x32" href="app/favicon-32.png" />
+<link rel="apple-touch-icon" href="app/apple-touch-icon.png" />
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f232c;
+    --line: #2a2f3a;
+    --text: #e8ecf3;
+    --muted: #8a93a6;
+    --accent: #ffb84d;
+    --accent-2: #74e0a4;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 70% -10%, rgba(28,34,48,0.55) 0%, rgba(15,17,21,0) 60%),
+      linear-gradient(to bottom, #1d1c36 0%, #3a2a55 30%, #5a3060 55%, #c46050 100%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+  }
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 56px 24px 80px;
+  }
+  /* nav */
+  nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 80px;
+    font-size: 13px;
+  }
+  nav .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-decoration: none;
+  }
+  nav .brand .dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(255,184,77,0.5);
+  }
+  nav a.text-link {
+    color: var(--muted);
+    text-decoration: none;
+    margin-left: 18px;
+  }
+  nav a.text-link:hover { color: var(--text); }
+
+  /* hero */
+  .hero h1 {
+    font-family: 'Charter','Iowan Old Style','Sitka Text','PT Serif',Georgia,serif;
+    font-size: clamp(34px, 5.8vw, 60px);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    margin: 0 0 16px;
+  }
+  .hero h1 em {
+    font-style: italic;
+    color: var(--accent-2);
+  }
+  .hero .sub {
+    font-size: clamp(16px, 2vw, 19px);
+    color: var(--muted);
+    max-width: 620px;
+    margin: 0 0 32px;
+    line-height: 1.5;
+  }
+  .cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 14px; }
+  .btn {
+    display: inline-block;
+    background: var(--accent);
+    color: #1a1300;
+    padding: 14px 26px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 16px;
+    text-decoration: none;
+    box-shadow: 0 8px 24px rgba(255,184,77,0.25);
+    transition: transform .15s ease, box-shadow .2s ease;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(255,184,77,0.35); }
+  .btn:active { transform: translateY(0); }
+  .btn-ghost {
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--line);
+    box-shadow: none;
+    padding: 13px 22px;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.04); box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
+  .cta-fineprint {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* tree silhouette next to hero */
+  .hero-row {
+    display: grid;
+    grid-template-columns: 1.4fr 0.8fr;
+    gap: 40px;
+    align-items: center;
+  }
+  @media (max-width: 720px) {
+    .hero-row { grid-template-columns: 1fr; }
+    .hero-tree { display: none; }
+  }
+  .hero-tree {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: end;
+    justify-content: center;
+    opacity: 0.85;
+  }
+  .hero-tree svg { width: 100%; height: auto; max-width: 320px; }
+
+  /* feature grid */
+  section.features {
+    margin-top: 96px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+  }
+  @media (max-width: 720px) { section.features { grid-template-columns: 1fr; } }
+  .feat {
+    padding: 22px;
+    background: rgba(23,26,33,0.7);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    backdrop-filter: blur(8px);
+  }
+  .feat .glyph {
+    font-size: 22px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .feat h3 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .feat p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .feat b { color: var(--text); font-weight: 600; }
+
+  /* "why" pull-quote */
+  section.why {
+    margin-top: 96px;
+    padding: 32px;
+    background: rgba(116,224,164,0.04);
+    border: 1px solid rgba(116,224,164,0.18);
+    border-radius: 16px;
+  }
+  section.why h2 {
+    font-family: 'Charter','Iowan Old Style',Georgia,serif;
+    font-weight: 500;
+    font-style: italic;
+    font-size: 22px;
+    margin: 0 0 14px;
+    color: var(--accent-2);
+  }
+  section.why p {
+    margin: 0 0 12px;
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.65;
+  }
+  section.why p:last-child { margin: 0; }
+
+  /* bottom CTA */
+  section.bottom-cta {
+    margin-top: 96px;
+    text-align: center;
+  }
+  section.bottom-cta h2 {
+    font-family: 'Charter','Iowan Old Style',Georgia,serif;
+    font-weight: 500;
+    font-size: 28px;
+    margin: 0 0 12px;
+  }
+  section.bottom-cta p {
+    color: var(--muted);
+    margin: 0 0 24px;
+  }
+
+  /* footer */
+  footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--text); }
+
+  /* gentle entrance */
+  @keyframes fadeUp { from { opacity:0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .hero h1, .hero .sub, .cta-row, .cta-fineprint, .hero-tree { animation: fadeUp .55s cubic-bezier(.2,.7,.2,1) both; }
+  .hero h1     { animation-delay: 0ms; }
+  .hero .sub   { animation-delay: 90ms; }
+  .cta-row     { animation-delay: 180ms; }
+  .cta-fineprint { animation-delay: 250ms; }
+  .hero-tree   { animation-delay: 120ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .hero h1, .hero .sub, .cta-row, .cta-fineprint, .hero-tree { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav>
+    <a class="brand" href="/focus/">
+      <span class="dot"></span>
+      One Thing
+    </a>
+    <div>
+      <a class="text-link" href="#what">what it does</a>
+      <a class="text-link" href="#why">why</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-row">
+      <div>
+        <h1>Focus that knows you're<br>a <em>person</em>, not a robot.</h1>
+        <p class="sub">A small companion for ADHD desk workers who need to actually go outside. Pomodoro, but kind — with a tree that grows from your habits, breaks that push you out the door, and reflections that bookend the day.</p>
+        <div class="cta-row">
+          <a class="btn" href="app/">Open the tool →</a>
+          <a class="btn btn-ghost" href="#what">See what it does</a>
+        </div>
+        <p class="cta-fineprint">Free. Works in any browser. Your data stays on your devices.</p>
+      </div>
+      <div class="hero-tree" aria-hidden="true">
+        <!-- a small grown tree, illustrative -->
+        <svg viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="50" cy="138" rx="28" ry="2" fill="rgba(0,0,0,0.3)"/>
+          <path d="M50 138 Q47 110 50 80 Q53 50 50 18" stroke="#8a6c4a" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+          <!-- branches -->
+          <path d="M50 120 Q60 116 70 110" stroke="#7a5e40" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M50 105 Q38 100 28 95" stroke="#7a5e40" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          <path d="M50 90 Q62 84 72 78" stroke="#7a5e40" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+          <path d="M50 75 Q40 68 32 62" stroke="#7a5e40" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+          <path d="M50 60 Q60 54 68 48" stroke="#7a5e40" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <!-- leaves -->
+          <circle cx="68" cy="110" r="2.4" fill="#74e0a4" opacity="0.8"/>
+          <circle cx="64" cy="113" r="1.8" fill="#74e0a4" opacity="0.7"/>
+          <circle cx="30" cy="94" r="2.2" fill="#74e0a4" opacity="0.75"/>
+          <circle cx="33" cy="92" r="1.6" fill="#74e0a4" opacity="0.7"/>
+          <circle cx="70" cy="79" r="2.0" fill="#74e0a4" opacity="0.8"/>
+          <circle cx="34" cy="63" r="2.2" fill="#74e0a4" opacity="0.78"/>
+          <circle cx="66" cy="49" r="2.0" fill="#74e0a4" opacity="0.85"/>
+          <!-- crown -->
+          <circle cx="46" cy="22" r="2.4" fill="#74e0a4" opacity="0.85"/>
+          <circle cx="54" cy="20" r="2.0" fill="#74e0a4" opacity="0.85"/>
+          <circle cx="50" cy="17" r="2.6" fill="#74e0a4" opacity="0.9"/>
+          <circle cx="44" cy="26" r="1.8" fill="#74e0a4" opacity="0.75"/>
+          <circle cx="56" cy="25" r="1.8" fill="#74e0a4" opacity="0.75"/>
+          <!-- fruit -->
+          <circle cx="70" cy="110" r="1.8" fill="#ffb84d" opacity="0.9"/>
+          <circle cx="68" cy="48" r="1.8" fill="#ffb84d" opacity="0.9"/>
+        </svg>
+      </div>
+    </div>
+  </header>
+
+  <section id="what" class="features">
+    <div class="feat">
+      <span class="glyph">🌳</span>
+      <h3>A tree that grows from your habits</h3>
+      <p>Each focus block adds a branch. Each consistent week fills it with leaves. Each evening reflection drops fruit. Long streaks get a warm halo. <b>Your accumulated effort, made visible.</b></p>
+    </div>
+    <div class="feat">
+      <span class="glyph">☀</span>
+      <h3>Breaks that push you outside</h3>
+      <p>Every break suggestion biases toward leaving the chair: <i>"Walk to the furthest window."</i> <i>"Text one person who isn't a coworker."</i> <i>"Watch the sunset — even 30 seconds is the right amount."</i> Time-of-day aware.</p>
+    </div>
+    <div class="feat">
+      <span class="glyph">🪶</span>
+      <h3>Brain dump that doesn't break your focus</h3>
+      <p>Stray thought during a block? Type it in the parking lot, hit Enter, keep working. It waits. Each dump drops a small leaf at your tree's base — even the off-task thoughts count.</p>
+    </div>
+    <div class="feat">
+      <span class="glyph">📝</span>
+      <h3>Bookended days: intention + reflection</h3>
+      <p>Morning: "what do you want today to feel like?" Evening: "one sentence — what went well?" Both surface together in your week view. Quiet ceremony, not a journal habit you'll abandon.</p>
+    </div>
+    <div class="feat">
+      <span class="glyph">🌧</span>
+      <h3>A living world behind your work</h3>
+      <p>The sky shifts through dawn to dusk. Real weather where you are (with permission) brings rain, snow, stars at night. A forest hill with breathing grass. Subtle — never competes with the timer.</p>
+    </div>
+    <div class="feat">
+      <span class="glyph">📁</span>
+      <h3>Your data lives on your devices</h3>
+      <p>Pick a sync file in iCloud Drive / Dropbox — opens on every device, syncs through your own cloud. No account, no server, no email. Or export to JSON / a calendar feed at any time.</p>
+    </div>
+  </section>
+
+  <section id="why" class="why">
+    <h2>Why this exists</h2>
+    <p>Most focus tools are timers with badges. They reward you for sitting still and looking at the screen — exactly what an ADHD brain doesn't need more of.</p>
+    <p>This one is built around the premise that <b>the break is the point</b>. You sit at a desk all day. You love being outside. You love people. The work matters but it's not the whole life. The timer is a way to give yourself permission to focus AND a kind, repeated nudge to leave the chair.</p>
+    <p>And the tree growing from your real habits is the part that's hard to leave — your accumulated effort, your reflections, the days you actually showed up, made into a small living thing in the corner.</p>
+  </section>
+
+  <section class="bottom-cta">
+    <h2>Ready?</h2>
+    <p>It takes about a minute to set up. The seedling is waiting.</p>
+    <a class="btn" href="app/">Open the tool →</a>
+  </section>
+
+  <footer>
+    <div>One Thing · made by Scott</div>
+    <div>
+      <a href="https://github.com/scotsf90-ux/focus" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
