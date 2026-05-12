@@ -366,6 +366,46 @@
     border-color: #3a4150;
   }
 
+  /* iter 64 — task type pill row (Need / Side quest) */
+  .task-type-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .task-type-row .small { color: var(--muted); font-size: 12px; }
+  .task-type-row button {
+    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 999px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    background: transparent;
+    cursor: pointer;
+  }
+  .task-type-row button.active[data-type="need"] {
+    background: rgba(255,184,77,0.12); color: var(--accent); border-color: rgba(255,184,77,0.4);
+  }
+  .task-type-row button.active[data-type="side"]:not(.locked) {
+    background: rgba(116,224,164,0.12); color: var(--accent-2); border-color: rgba(116,224,164,0.4);
+  }
+  /* Locked side-quest pill — wins over active styling so the lock state is visible */
+  .task-type-row button.locked,
+  .task-type-row button.active.locked {
+    background: rgba(255,255,255,0.02);
+    color: var(--muted);
+    border-color: var(--line);
+    opacity: 0.7;
+    cursor: help;
+  }
+  /* status pill in header */
+  .sq-pill {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    background: rgba(255,255,255,0.02);
+    white-space: nowrap;
+  }
+  .sq-pill.locked { color: var(--muted); }
+  .sq-pill.unlocked { color: var(--accent-2); border-color: rgba(116,224,164,0.4); background: rgba(116,224,164,0.08); }
+
   .grid {
     display: grid;
     grid-template-columns: 1.3fr 1fr;
@@ -1525,6 +1565,8 @@
         <span>·</span>
         <span>Last break: <b id="lastBreak">—</b></span>
         <span id="weatherChip" class="weather-chip" hidden></span>
+        <!-- iter 64: side quest discipline status pill, hidden unless discipline is on -->
+        <span id="sqStatus" class="sq-pill" hidden></span>
       </div>
       <button id="installBtn" class="icon-btn" title="Install app" aria-label="Install app" hidden>⬇</button>
       <button id="weekBtn" class="icon-btn" title="Weekly look-back" aria-label="Open weekly look-back">📊</button>
@@ -1542,6 +1584,13 @@
   <section class="card focus">
     <h2>The one thing right now</h2>
     <input id="taskInput" placeholder="What are you working on? (just one thing)" autocomplete="off" />
+
+    <!-- iter 64: task type — visible only when Side quest discipline is on -->
+    <div id="taskTypeRow" class="task-type-row" hidden>
+      <span class="small">Type:</span>
+      <button data-type="need" class="active">Need</button>
+      <button data-type="side">Side quest</button>
+    </div>
 
     <div class="timer-row">
       <div id="timer" class="timer">25:00</div>
@@ -1749,6 +1798,20 @@
       <div id="syncStatus" class="small" style="color: var(--muted); margin-top: 8px; min-height: 1em;"></div>
     </div>
 
+    <h3>Side quest discipline <span class="small">(needs before wants)</span></h3>
+    <div class="small" style="color: var(--muted); margin: 0 0 8px; line-height: 1.4;">
+      Tag each task as a <b>Need</b> (work, chores, health, eat) or a <b>Side quest</b> (everything else). Side quests stay locked until you bank Need focus blocks. Override is always one click away — but you have to <em>choose</em> to break it. Off by default.
+    </div>
+    <label><input type="checkbox" id="sqEnabled" /> Enable side quest discipline</label>
+    <div class="row" style="margin-top: 6px;">
+      <span class="small">Earn one side quest unlock per</span>
+      <input type="number" id="sqRatio" min="1" max="10" step="1" style="width:64px;" />
+      <span class="small">Need block(s).</span>
+    </div>
+    <div class="small" style="color: var(--muted); margin-top: 6px;">
+      Resets at end-of-day cutoff. Today's tally: <b id="sqTodayTally" style="color: var(--text);">—</b>
+    </div>
+
     <h3>Smart clustering <span class="small">(experimental · ~25 MB one-time download)</span></h3>
     <div class="small" style="color: var(--muted); margin: 0 0 8px; line-height: 1.4;">
       Opt-in. Loads a tiny sentence-embedding model into your browser so the <b>Settle your thoughts</b> view can group dumps by meaning, not just shared words. The model runs entirely on-device — nothing about your thoughts is sent anywhere. Model files come from a public CDN once, then cache offline.
@@ -1885,6 +1948,12 @@
     state.cutoffTriggeredAt = null;
   }
   state.task ??= '';
+  // iter 64 — Side quest discipline. Opt-in: when enabled, the user tags each
+  // task as Need or Side quest. Side quests stay locked until enough Need blocks
+  // have been completed today (ratio configurable). Overrides are logged so the
+  // user can see their own pattern. Default off so existing users get no change.
+  state.needsDiscipline ??= { enabled: false, ratio: 2 };
+  state.taskType ??= 'need'; // 'need' | 'side'
   state.duration ??= 25;
   state.parkList ??= [];
   // Migrate string[] → {text, ts, embedding}[] (iter 56). Backward-compat.
@@ -1913,7 +1982,41 @@
   function recordFocusBlock(minutes) {
     const h = state.history[today] ??= {};
     h.blocks = Array.isArray(h.blocks) ? h.blocks : [];
-    h.blocks.push({ id: _newId(), ts: Date.now(), minutes: minutes || 0, deviceId: state.deviceId });
+    const block = { id: _newId(), ts: Date.now(), minutes: minutes || 0, deviceId: state.deviceId };
+    // Only stamp type when Side-quest discipline is on — keeps the block log clean
+    // for users who don't use the feature, and avoids retroactively classifying.
+    if (state.needsDiscipline && state.needsDiscipline.enabled) {
+      block.type = (state.taskType === 'side') ? 'side' : 'need';
+    }
+    h.blocks.push(block);
+  }
+  function recordOverride(taskName) {
+    const h = state.history[today] ??= {};
+    h.overrides = Array.isArray(h.overrides) ? h.overrides : [];
+    h.overrides.push({ id: _newId(), ts: Date.now(), task: String(taskName || ''), deviceId: state.deviceId });
+  }
+
+  // iter 64 — side quest discipline helpers
+  function _todayBlocks() {
+    const h = state.history && state.history[today];
+    return (h && Array.isArray(h.blocks)) ? h.blocks : [];
+  }
+  function needsBlocksToday() {
+    return _todayBlocks().filter(b => b.type === 'need').length;
+  }
+  function sideBlocksToday() {
+    return _todayBlocks().filter(b => b.type === 'side').length;
+  }
+  function earnedUnlocks() {
+    const r = Math.max(1, Number(state.needsDiscipline && state.needsDiscipline.ratio) || 2);
+    return Math.floor(needsBlocksToday() / r);
+  }
+  function availableUnlocks() {
+    return Math.max(0, earnedUnlocks() - sideBlocksToday());
+  }
+  function isSideQuestLocked() {
+    if (!state.needsDiscipline || !state.needsDiscipline.enabled) return false;
+    return availableUnlocks() <= 0;
   }
   function recordBreak() {
     const h = state.history[today] ??= {};
@@ -1971,6 +2074,23 @@
 
   function start() {
     if (endsAt) return;
+    // iter 64: side quest discipline gate
+    if (mode === 'focus'
+        && state.needsDiscipline && state.needsDiscipline.enabled
+        && state.taskType === 'side'
+        && isSideQuestLocked()) {
+      const ratio = state.needsDiscipline.ratio || 2;
+      const n = needsBlocksToday();
+      const remaining = ratio - (n % ratio);
+      const ok = window.confirm(
+        `Side quest is locked.\n\n` +
+        `${remaining} more Need block${remaining === 1 ? '' : 's'} until you unlock one.\n\n` +
+        `Override and start a Side quest anyway? (Logged so you can see your pattern.)`
+      );
+      if (!ok) return;
+      recordOverride(state.task);
+      save();
+    }
     endsAt = Date.now() + remaining * 1000;
     if (!tickHandle) tickHandle = setInterval(render, 250);
     render();
@@ -1999,6 +2119,7 @@
       setStreak(state.streak);
       renderTree();
       applyStreakHalo();
+      if (typeof renderSideQuest === 'function') renderSideQuest();
       notify('Focus block done', 'Time to stand up and step outside.');
       openBreak();
     } else {
@@ -3575,6 +3696,7 @@
     setStreak(state.streak);
     renderTree();
     applyStreakHalo();
+    if (typeof renderSideQuest === 'function') renderSideQuest();
     const banner = $('doneBanner');
     banner.textContent = '✓ Logged. Take the break — that\'s the deal.';
     banner.classList.add('show');
@@ -3641,6 +3763,68 @@
       if (!endsAt && mode === 'focus') reset(state.duration);
     };
   });
+
+  // === iter 64: side quest discipline UI + lock-on-start ===
+  function renderSideQuest() {
+    const enabled = !!(state.needsDiscipline && state.needsDiscipline.enabled);
+    const row = $('taskTypeRow');
+    const pill = $('sqStatus');
+    if (!row || !pill) return;
+    row.hidden = !enabled;
+    pill.hidden = !enabled;
+    if (!enabled) return;
+    const ratio = (state.needsDiscipline.ratio || 2);
+    const n = needsBlocksToday();
+    const used = sideBlocksToday();
+    const earned = earnedUnlocks();
+    const avail = availableUnlocks();
+    // sync the type pill row
+    row.querySelectorAll('button[data-type]').forEach(b => {
+      b.classList.toggle('active', b.dataset.type === state.taskType);
+      // visually mark side as locked when no unlocks available
+      if (b.dataset.type === 'side') {
+        const locked = avail <= 0;
+        b.classList.toggle('locked', locked);
+        const remaining = ratio - (n % ratio);
+        b.textContent = locked ? '🔒 Side quest' : 'Side quest';
+        b.title = locked
+          ? `Locked — ${remaining} more Need block${remaining === 1 ? '' : 's'} until unlock`
+          : `${avail} unlock${avail === 1 ? '' : 's'} available`;
+      }
+    });
+    // sync the header status pill
+    if (avail > 0) {
+      pill.className = 'sq-pill unlocked';
+      pill.textContent = used > 0
+        ? `🔓 ${avail} unlock${avail === 1 ? '' : 's'} · ${used} spent`
+        : `🔓 ${avail} side-quest unlock${avail === 1 ? '' : 's'}`;
+    } else {
+      pill.className = 'sq-pill locked';
+      const remaining = ratio - (n % ratio);
+      pill.textContent = `🔒 ${n}/${ratio} needs · ${remaining} to unlock`;
+    }
+    // settings tally line
+    const tally = $('sqTodayTally');
+    if (tally) tally.textContent = `${n} Need block${n === 1 ? '' : 's'}, ${used} Side quest block${used === 1 ? '' : 's'} · ${avail} unlock${avail === 1 ? '' : 's'} available`;
+  }
+
+  // wire the type pill row
+  document.querySelectorAll('#taskTypeRow button[data-type]').forEach(b => {
+    b.onclick = () => {
+      const t = b.dataset.type;
+      if (t === 'side' && isSideQuestLocked()) {
+        // Don't switch yet — show the override flow when user actually hits Start.
+        // But let them flip the toggle so they can see the lock messaging.
+        // We allow the visual switch; the lock fires on Start.
+      }
+      state.taskType = t;
+      save();
+      renderSideQuest();
+    };
+  });
+
+  // initial render
+  renderSideQuest();
 
   // brain dump
   function renderPark(animateFirst = false) {
@@ -3801,6 +3985,30 @@
         }
       } catch (_) { /* status already shown */ }
     });
+  })();
+
+  // iter 64: side quest discipline settings wiring
+  (function wireSideQuestSettings() {
+    const cb = $('sqEnabled');
+    const rin = $('sqRatio');
+    if (!cb || !rin) return;
+    cb.checked = !!(state.needsDiscipline && state.needsDiscipline.enabled);
+    rin.value = (state.needsDiscipline && state.needsDiscipline.ratio) || 2;
+    cb.addEventListener('change', () => {
+      state.needsDiscipline.enabled = !!cb.checked;
+      save();
+      renderSideQuest();
+    });
+    rin.addEventListener('change', () => {
+      const v = Math.max(1, Math.min(10, Math.round(Number(rin.value) || 2)));
+      rin.value = v;
+      state.needsDiscipline.ratio = v;
+      save();
+      renderSideQuest();
+    });
+    // refresh tally text when settings overlay opens
+    const settingsBtn = $('settingsBtn');
+    if (settingsBtn) settingsBtn.addEventListener('click', () => renderSideQuest());
   })();
 
   // keyboard
