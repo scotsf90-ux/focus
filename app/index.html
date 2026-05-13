@@ -940,13 +940,20 @@
   }
   .cutoff-sq b { color: var(--text); }
   .cutoff-sq .sq-earned-line { color: var(--muted); font-style: italic; display: block; margin-top: 6px; }
-  /* category row pills get small color tints to match the bar */
-  .task-cat-row button { font-size: 11px; padding: 4px 9px; }
-  .task-cat-row button.active[data-cat="work"]   { background: rgba(255,184,77,0.15); color: #ffb84d; border-color: rgba(255,184,77,0.45); }
-  .task-cat-row button.active[data-cat="chores"] { background: rgba(201,160,122,0.15); color: #c9a07a; border-color: rgba(201,160,122,0.45); }
-  .task-cat-row button.active[data-cat="health"] { background: rgba(116,224,164,0.15); color: var(--accent-2); border-color: rgba(116,224,164,0.45); }
-  .task-cat-row button.active[data-cat="eat"]    { background: rgba(240,138,120,0.15); color: #f08a78; border-color: rgba(240,138,120,0.45); }
-  .task-cat-row button.active[data-cat="other"]  { background: rgba(138,147,166,0.15); color: var(--muted); border-color: rgba(138,147,166,0.45); }
+  /* iter 68 — override prompt modal */
+  .override-icon { font-size: 36px; margin-bottom: 8px; line-height: 1; }
+  #overrideOverlay .modal { max-width: 440px; }
+  #overrideOverlay .modal h2 { font-size: 20px; margin: 0 0 8px; }
+  #overrideOverlay .modal .prompt { font-size: 15px; color: var(--text); margin: 0; }
+  /* iter 68 — categories inline next to the type pills, separator dot */
+  .task-cat-inline { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .task-cat-inline .cat-sep { color: var(--muted); margin: 0 2px; opacity: 0.5; }
+  .task-cat-inline button { font-size: 11px; padding: 4px 9px; border-radius: 999px; color: var(--muted); border: 1px solid var(--line); background: transparent; cursor: pointer; }
+  .task-cat-inline button.active[data-cat="work"]   { background: rgba(255,184,77,0.15); color: #ffb84d; border-color: rgba(255,184,77,0.45); }
+  .task-cat-inline button.active[data-cat="chores"] { background: rgba(201,160,122,0.15); color: #c9a07a; border-color: rgba(201,160,122,0.45); }
+  .task-cat-inline button.active[data-cat="health"] { background: rgba(116,224,164,0.15); color: var(--accent-2); border-color: rgba(116,224,164,0.45); }
+  .task-cat-inline button.active[data-cat="eat"]    { background: rgba(240,138,120,0.15); color: #f08a78; border-color: rgba(240,138,120,0.45); }
+  .task-cat-inline button.active[data-cat="other"]  { background: rgba(138,147,166,0.15); color: var(--muted); border-color: rgba(138,147,166,0.45); }
   .week-summary { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 14px; flex-wrap: wrap; }
   .week-summary b { color: var(--text); font-weight: 700; }
 
@@ -1627,21 +1634,19 @@
     <h2>The one thing right now</h2>
     <input id="taskInput" placeholder="What are you working on? (just one thing)" autocomplete="off" />
 
-    <!-- iter 64: task type — visible only when Side quest discipline is on -->
+    <!-- iter 64/68: task type — visible only when Side quest discipline is on -->
     <div id="taskTypeRow" class="task-type-row" hidden>
-      <span class="small">Type:</span>
       <button data-type="need" class="active">Need</button>
       <button data-type="side">Side quest</button>
-    </div>
-
-    <!-- iter 66: need sub-category — visible only when discipline on AND type=need -->
-    <div id="taskCatRow" class="task-type-row task-cat-row" hidden>
-      <span class="small">Category:</span>
-      <button data-cat="work">work</button>
-      <button data-cat="chores">chores</button>
-      <button data-cat="health">health</button>
-      <button data-cat="eat">eat</button>
-      <button data-cat="other">other</button>
+      <!-- iter 66/68: inline categories appear right next to the type pills when Need is selected -->
+      <div id="taskCatRow" class="task-cat-inline" hidden>
+        <span class="cat-sep">·</span>
+        <button data-cat="work">work</button>
+        <button data-cat="chores">chores</button>
+        <button data-cat="health">health</button>
+        <button data-cat="eat">eat</button>
+        <button data-cat="other">other</button>
+      </div>
     </div>
 
     <div class="timer-row">
@@ -1752,6 +1757,24 @@
     <div class="actions" style="margin-top:14px;">
       <button id="cutoffOk" class="primary">Save &amp; sign off</button>
       <button id="cutoffSnooze30" class="ghost">Snooze 30m</button>
+    </div>
+  </div>
+</div>
+
+<!-- iter 68: Side quest override prompt — replaces native confirm() -->
+<div id="overrideOverlay" class="overlay">
+  <div class="modal center" role="dialog" aria-modal="true" aria-labelledby="overrideTitle">
+    <div class="override-icon" aria-hidden="true">🔒</div>
+    <h2 id="overrideTitle">Side quest is locked</h2>
+    <p class="prompt">
+      <b id="overrideRemaining">2</b> more Need block<span id="overrideRemainingS">s</span> until you unlock one.
+    </p>
+    <p class="small" style="color: var(--muted); margin: 6px 0 18px;">
+      You can override anyway — but you've chosen to break the deal you set with yourself. It'll be logged so you can see your pattern later.
+    </p>
+    <div class="actions" style="justify-content:center; gap: 10px;">
+      <button id="overrideCancel" class="primary">Stick with a Need</button>
+      <button id="overrideAccept" class="ghost danger">Override anyway</button>
     </div>
   </div>
 </div>
@@ -2150,28 +2173,48 @@
     document.title = (endsAt ? (mode==='break'?'☕ ':'● ') : '○ ') + fmt(secLeft) + ' — Vesper';
   }
 
+  function _beginFocusBlock() {
+    endsAt = Date.now() + remaining * 1000;
+    if (!tickHandle) tickHandle = setInterval(render, 250);
+    render();
+  }
+  // iter 68: in-app override prompt (replaces native confirm). Returns a Promise<bool>.
+  function showOverridePrompt() {
+    const overlay = document.getElementById('overrideOverlay');
+    const ratio = (state.needsDiscipline && state.needsDiscipline.ratio) || 2;
+    const n = needsBlocksToday();
+    const remaining = ratio - (n % ratio);
+    document.getElementById('overrideRemaining').textContent = remaining;
+    document.getElementById('overrideRemainingS').textContent = remaining === 1 ? '' : 's';
+    overlay.classList.add('show');
+    return new Promise(resolve => {
+      const accept = document.getElementById('overrideAccept');
+      const cancel = document.getElementById('overrideCancel');
+      const cleanup = () => {
+        overlay.classList.remove('show');
+        accept.onclick = null;
+        cancel.onclick = null;
+      };
+      accept.onclick = () => { cleanup(); resolve(true); };
+      cancel.onclick = () => { cleanup(); resolve(false); };
+    });
+  }
   function start() {
     if (endsAt) return;
-    // iter 64: side quest discipline gate
+    // iter 64/68: side quest discipline gate — calm in-app modal, not native confirm
     if (mode === 'focus'
         && state.needsDiscipline && state.needsDiscipline.enabled
         && state.taskType === 'side'
         && isSideQuestLocked()) {
-      const ratio = state.needsDiscipline.ratio || 2;
-      const n = needsBlocksToday();
-      const remaining = ratio - (n % ratio);
-      const ok = window.confirm(
-        `Side quest is locked.\n\n` +
-        `${remaining} more Need block${remaining === 1 ? '' : 's'} until you unlock one.\n\n` +
-        `Override and start a Side quest anyway? (Logged so you can see your pattern.)`
-      );
-      if (!ok) return;
-      recordOverride(state.task);
-      save();
+      showOverridePrompt().then(ok => {
+        if (!ok) return;
+        recordOverride(state.task);
+        save();
+        _beginFocusBlock();
+      });
+      return;
     }
-    endsAt = Date.now() + remaining * 1000;
-    if (!tickHandle) tickHandle = setInterval(render, 250);
-    render();
+    _beginFocusBlock();
   }
   function pause() {
     if (!endsAt) return;
@@ -2525,7 +2568,10 @@
   setInterval(cutoffTick, 30 * 1000);
 
   function anyOverlayOpen() {
-    return ['overlay','cutoffOverlay','settingsOverlay','weekOverlay','settleOverlay'].some(id => $(id).classList.contains('show'));
+    return ['overlay','cutoffOverlay','settingsOverlay','weekOverlay','settleOverlay','overrideOverlay'].some(id => {
+      const el = $(id);
+      return el && el.classList.contains('show');
+    });
   }
 
   // --- streak counter helper with pop animation on increment ---
@@ -4235,6 +4281,7 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if ($('overlay').classList.contains('show')) closeBreak();
+      else if ($('overrideOverlay') && $('overrideOverlay').classList.contains('show')) $('overrideCancel').click();
       else if ($('cutoffOverlay').classList.contains('show')) $('cutoffOverlay').classList.remove('show');
       else if ($('settingsOverlay').classList.contains('show')) closeSettings();
       else if ($('weekOverlay').classList.contains('show')) $('weekOverlay').classList.remove('show');
