@@ -1281,12 +1281,18 @@
   .weather-overlay .cloud {
     position: absolute;
     border-radius: 50%;
-    background: radial-gradient(ellipse at center, rgba(220,225,240,0.22) 0%, rgba(220,225,240,0) 70%);
-    filter: blur(10px);
+    background: radial-gradient(ellipse at center, rgba(220,225,240,0.5) 0%, rgba(220,225,240,0.15) 55%, rgba(220,225,240,0) 75%);
+    filter: blur(8px);
     top: var(--y, 12%);
     animation: cloudDrift var(--dur, 90s) linear infinite;
     animation-delay: var(--delay, 0s);
     will-change: transform;
+    mix-blend-mode: screen;
+  }
+  /* darker, denser version for night */
+  .weather-overlay.is-night .cloud {
+    background: radial-gradient(ellipse at center, rgba(180,190,210,0.42) 0%, rgba(180,190,210,0.12) 55%, rgba(180,190,210,0) 75%);
+    mix-blend-mode: normal;
   }
   @keyframes cloudDrift {
     0%   { transform: translate3d(-45vw, 0, 0); }
@@ -3333,19 +3339,25 @@
         el.appendChild(d);
       }
     }
-    // clouds when overcast/cloudy/fog OR cloudCover high
-    const wantsClouds = w.bucket === 'cloudy' || w.bucket === 'fog' || (w.cloudCover != null && w.cloudCover > 55 && w.bucket !== 'rain' && w.bucket !== 'snow');
+    // clouds — count + opacity scale with actual cloudCover percentage
+    // (not just bucket) so 30% partly cloudy and 100% overcast feel distinct
+    el.classList.toggle('is-night', w.isDay === 0);
+    const cc = (w.cloudCover != null) ? w.cloudCover : (w.bucket === 'cloudy' ? 75 : 0);
+    const wantsClouds = cc >= 25 && w.bucket !== 'rain' && w.bucket !== 'snow' && w.bucket !== 'thunder';
     if (wantsClouds) {
-      const count = scale(w.bucket === 'fog' ? 5 : 4);
+      // 25% cc → 2 clouds, 50% → 4, 75% → 6, 100% → 8 (then scaled for mobile/reduced-motion)
+      const targetCount = Math.max(2, Math.round((cc / 100) * 8));
+      const count = scale(w.bucket === 'fog' ? targetCount + 2 : targetCount);
+      const baseOpacity = Math.min(0.95, 0.45 + (cc / 100) * 0.5);
       for (let i = 0; i < count; i++) {
         const d = document.createElement('div');
         d.className = 'cloud';
-        d.style.setProperty('--y', (6 + rnd() * 38).toFixed(1) + '%');
+        d.style.setProperty('--y', (4 + rnd() * 42).toFixed(1) + '%');
         d.style.setProperty('--dur', (70 + rnd() * 80).toFixed(0) + 's');
         d.style.setProperty('--delay', (-rnd() * 80).toFixed(0) + 's');
-        d.style.width = (220 + rnd() * 220).toFixed(0) + 'px';
-        d.style.height = (60 + rnd() * 50).toFixed(0) + 'px';
-        d.style.opacity = (0.5 + rnd() * 0.5).toFixed(2);
+        d.style.width = (240 + rnd() * 260).toFixed(0) + 'px';
+        d.style.height = (70 + rnd() * 60).toFixed(0) + 'px';
+        d.style.opacity = (baseOpacity * (0.7 + rnd() * 0.3)).toFixed(2);
         el.appendChild(d);
       }
     }
