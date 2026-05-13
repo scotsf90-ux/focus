@@ -948,6 +948,11 @@
   /* iter 68 — categories inline next to the type pills, separator dot */
   .task-cat-inline { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
   .task-cat-inline .cat-sep { color: var(--muted); margin: 0 2px; opacity: 0.5; }
+  /* On narrow screens, flow categories onto their own line below the type pills so the · separator doesn't end up orphaned */
+  @media (max-width: 600px) {
+    .task-cat-inline { display: flex; width: 100%; margin-top: 6px; gap: 4px; }
+    .task-cat-inline .cat-sep { display: none; }
+  }
   .task-cat-inline button { font-size: 11px; padding: 4px 9px; border-radius: 999px; color: var(--muted); border: 1px solid var(--line); background: transparent; cursor: pointer; }
   .task-cat-inline button.active[data-cat="work"]   { background: rgba(255,184,77,0.15); color: #ffb84d; border-color: rgba(255,184,77,0.45); }
   .task-cat-inline button.active[data-cat="chores"] { background: rgba(201,160,122,0.15); color: #c9a07a; border-color: rgba(201,160,122,0.45); }
@@ -3789,7 +3794,7 @@
     const lines = [];
     lines.push(`<b>Today:</b> ${n} need block${n === 1 ? '' : 's'} · ${used} side quest${used === 1 ? '' : 's'} · ${overrides} override${overrides === 1 ? '' : 's'}`);
     if (unused > 0) {
-      lines.push(`<span class="sq-earned-line">You earned <b>${earned}</b>, used <b>${used}</b> — ${unused} unlock${unused === 1 ? '' : 's'} you didn't take. What were they going to be?</span>`);
+      lines.push(`<span class="sq-earned-line">You earned <b>${earned}</b>, used <b>${used}</b> — <b>${unused}</b> unlock${unused === 1 ? '' : 's'} left on the table. Worth a look.</span>`);
     } else if (overrides > 0 && used >= 1) {
       lines.push(`<span class="sq-earned-line">You overrode the lock <b>${overrides}</b> time${overrides === 1 ? '' : 's'}. That's information — not a verdict.</span>`);
     }
