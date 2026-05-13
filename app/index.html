@@ -905,6 +905,15 @@
   .week-col.today .week-bar { background: var(--accent-2); }
   .week-col .day-label { font-size: 11px; color: var(--muted); }
   .week-col .day-count { font-size: 12px; color: var(--text); font-weight: 600; }
+  /* iter 65 — stacked week bars (need bottom, side top) */
+  .week-bar-wrap.stacked { flex-direction: column; justify-content: flex-end; gap: 1px; }
+  .week-bar-wrap.stacked .week-bar { border-radius: 0; min-height: 1px; }
+  .week-bar-wrap.stacked .week-bar.need { background: var(--accent); }
+  .week-bar-wrap.stacked .week-bar.side { background: var(--accent-2); border-radius: 6px 6px 0 0; }
+  .week-bar-wrap.stacked .week-bar.untyped { background: var(--line); }
+  .week-bar-wrap.stacked .week-bar:last-child { border-radius: 0 0 0 0; }
+  .week-col .day-override { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .week-summary .sq-summary { display: inline-block; margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--line); }
   .week-summary { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 14px; flex-wrap: wrap; }
   .week-summary b { color: var(--text); font-weight: 700; }
 
@@ -1917,6 +1926,23 @@
     if (!h) return 0;
     if (Array.isArray(h.blocks)) return h.blocks.length;
     return h.focusBlocks || 0;
+  }
+  // iter 65 — need/side splits for the week view
+  function dayNeedBlocks(h) {
+    if (!h || !Array.isArray(h.blocks)) return 0;
+    return h.blocks.filter(b => b.type === 'need').length;
+  }
+  function daySideBlocks(h) {
+    if (!h || !Array.isArray(h.blocks)) return 0;
+    return h.blocks.filter(b => b.type === 'side').length;
+  }
+  function dayUntypedBlocks(h) {
+    if (!h || !Array.isArray(h.blocks)) return dayBlocks(h);
+    return h.blocks.filter(b => !b.type).length;
+  }
+  function dayOverrides(h) {
+    if (!h || !Array.isArray(h.overrides)) return 0;
+    return h.overrides.length;
   }
   function dayBreaks(h) {
     if (!h) return 0;
@@ -3624,6 +3650,10 @@
       days.push({
         key, date: d,
         focusBlocks: dayBlocks(h),
+        needBlocks: dayNeedBlocks(h),
+        sideBlocks: daySideBlocks(h),
+        untypedBlocks: dayUntypedBlocks(h),
+        overrides: dayOverrides(h),
         breaks: dayBreaks(h),
         minutes: dayMinutes(h),
         reflection: dayReflection(h),
@@ -3633,14 +3663,33 @@
     const max = Math.max(1, ...days.map(d => d.focusBlocks));
     const grid = $('weekGrid');
     grid.innerHTML = '';
+    // iter 65: when any day has typed blocks, render stacked bars (need=accent, side=accent-2)
+    const anyTyped = days.some(d => (d.needBlocks + d.sideBlocks) > 0);
     days.forEach(d => {
       const isToday = d.key === today;
       const col = document.createElement('div');
       col.className = 'week-col' + (isToday ? ' today' : '');
       const h = (d.focusBlocks / max) * 100;
+      let bar;
+      if (anyTyped && d.focusBlocks > 0) {
+        // stacked: need at bottom (orange), side on top (green), untyped grey
+        const needH = (d.needBlocks / max) * 100;
+        const sideH = (d.sideBlocks / max) * 100;
+        const untypedH = (d.untypedBlocks / max) * 100;
+        bar = `
+          <div class="week-bar-wrap stacked">
+            ${d.sideBlocks > 0 ? `<div class="week-bar side" style="height:${sideH}%" title="${d.sideBlocks} side quest"></div>` : ''}
+            ${d.untypedBlocks > 0 ? `<div class="week-bar untyped" style="height:${untypedH}%" title="${d.untypedBlocks} untyped"></div>` : ''}
+            ${d.needBlocks > 0 ? `<div class="week-bar need" style="height:${needH}%" title="${d.needBlocks} need"></div>` : ''}
+          </div>`;
+      } else {
+        bar = `<div class="week-bar-wrap"><div class="week-bar" style="height:${h}%"></div></div>`;
+      }
+      const overrideMark = d.overrides > 0 ? `<div class="day-override" title="${d.overrides} override${d.overrides === 1 ? '' : 's'}">⚠ ${d.overrides}</div>` : '';
       col.innerHTML = `
         <div class="day-count">${d.focusBlocks}</div>
-        <div class="week-bar-wrap"><div class="week-bar" style="height:${h}%"></div></div>
+        ${bar}
+        ${overrideMark}
         <div class="day-label">${d.date.toLocaleDateString(undefined, { weekday: 'short' })}</div>
       `;
       grid.appendChild(col);
@@ -3648,13 +3697,20 @@
     const totalBlocks = days.reduce((s,d)=>s+d.focusBlocks,0);
     const totalMin = days.reduce((s,d)=>s+d.minutes,0);
     const totalBreaks = days.reduce((s,d)=>s+d.breaks,0);
+    const totalNeed = days.reduce((s,d)=>s+d.needBlocks,0);
+    const totalSide = days.reduce((s,d)=>s+d.sideBlocks,0);
+    const totalOverrides = days.reduce((s,d)=>s+d.overrides,0);
     const best = days.reduce((b,d)=> d.focusBlocks>b.focusBlocks?d:b, days[0]);
-    $('weekSummary').innerHTML = `
+    let summary = `
       <span><b>${totalBlocks}</b> blocks</span>
       <span><b>${Math.round(totalMin/60*10)/10}h</b> focused</span>
       <span><b>${totalBreaks}</b> breaks</span>
       <span>best day: <b>${best.date.toLocaleDateString(undefined,{weekday:'long'})}</b> (${best.focusBlocks})</span>
     `;
+    if (anyTyped) {
+      summary += `<span class="sq-summary"><b style="color:var(--accent);">${totalNeed}</b> needs · <b style="color:var(--accent-2);">${totalSide}</b> side quests${totalOverrides > 0 ? ` · <b style="color:var(--warn);">${totalOverrides}</b> override${totalOverrides === 1 ? '' : 's'}` : ''}</span>`;
+    }
+    $('weekSummary').innerHTML = summary;
     // intentions + reflections list (intent in the morning, reflect at night)
     const dayEntries = days
       .filter(d => d.reflection || d.intention)
