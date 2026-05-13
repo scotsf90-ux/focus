@@ -940,6 +940,8 @@
   }
   .cutoff-sq b { color: var(--text); }
   .cutoff-sq .sq-earned-line { color: var(--muted); font-style: italic; display: block; margin-top: 6px; }
+  /* iter 72 — manual weather override active indicator on the chip */
+  .weather-chip .override-dot { color: var(--accent); margin-left: 4px; font-size: 9px; }
   /* iter 68 — override prompt modal */
   .override-icon { font-size: 36px; margin-bottom: 8px; line-height: 1; }
   #overrideOverlay .modal { max-width: 440px; }
@@ -1281,8 +1283,8 @@
   .weather-overlay .cloud {
     position: absolute;
     border-radius: 50%;
-    background: radial-gradient(ellipse at center, rgba(220,225,240,0.5) 0%, rgba(220,225,240,0.15) 55%, rgba(220,225,240,0) 75%);
-    filter: blur(8px);
+    background: radial-gradient(ellipse at center, rgba(220,225,240,0.85) 0%, rgba(220,225,240,0.35) 50%, rgba(220,225,240,0) 80%);
+    filter: blur(6px);
     top: var(--y, 12%);
     animation: cloudDrift var(--dur, 90s) linear infinite;
     animation-delay: var(--delay, 0s);
@@ -1291,7 +1293,7 @@
   }
   /* darker, denser version for night */
   .weather-overlay.is-night .cloud {
-    background: radial-gradient(ellipse at center, rgba(180,190,210,0.42) 0%, rgba(180,190,210,0.12) 55%, rgba(180,190,210,0) 75%);
+    background: radial-gradient(ellipse at center, rgba(190,200,220,0.7) 0%, rgba(180,190,210,0.25) 55%, rgba(180,190,210,0) 80%);
     mix-blend-mode: normal;
   }
   @keyframes cloudDrift {
@@ -1859,6 +1861,20 @@
       <button id="weatherRefreshBtn" class="ghost" style="font-size:13px; padding:6px 12px;" hidden>Refresh location &amp; weather</button>
       <button id="weatherTestBtn" class="ghost" style="font-size:13px; padding:6px 12px;">Test Open-Meteo connection</button>
     </div>
+
+    <!-- iter 72: manual override when the API hasn't caught up to what's outside -->
+    <div class="small" style="color: var(--muted); margin-top: 10px; line-height: 1.4;">
+      If the visual doesn't match what you actually see outside, force it here. Override clears at midnight.
+    </div>
+    <div id="weatherOverrideRow" class="energy-row" style="margin-top: 6px; gap: 4px;">
+      <button data-wo="" class="active">Auto</button>
+      <button data-wo="clear">Clear</button>
+      <button data-wo="cloudy">Cloudy</button>
+      <button data-wo="rain">Rain</button>
+      <button data-wo="snow">Snow</button>
+      <button data-wo="fog">Fog</button>
+      <button data-wo="thunder">Storm</button>
+    </div>
     <div class="small" style="color: var(--muted); margin-top:6px; line-height:1.4;">
       Used only on-device to fetch weather. Coordinates never leave your browser except to <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> for the forecast.
     </div>
@@ -2089,6 +2105,8 @@
   state.ml ??= { enabled: false, modelReady: false, lastError: null };
   state.fileSync ??= { fileName: null, lastSyncedAt: null };
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
+  // iter 72: user can force a weather bucket when the API hasn't caught up to what's outside
+  state.weatherOverride ??= null; // null | 'clear' | 'cloudy' | 'rain' | 'snow' | 'fog' | 'thunder'
   state.alarmLastFiredAt ??= null;
   state.history[today] ??= {};
 
@@ -2630,6 +2648,8 @@
     if (typeof cutoffTick === 'function') cutoffTick();
     // iter 68: refresh side-quest status pill so today's count resets visibly at midnight
     if (typeof renderSideQuest === 'function') renderSideQuest();
+    // iter 72: weather override is intentionally a daily one — clear at midnight so user re-asserts if conditions persist
+    state.weatherOverride = null;
     // brief notification so the user knows their day reset
     if (typeof notify === 'function') notify('New day', 'Stats reset. Yesterday\'s blocks are saved in the week view.');
   }
@@ -3151,6 +3171,30 @@
       }, 200);
     });
   }
+  // iter 72: wire the manual weather override picker
+  function _syncOverridePills() {
+    document.querySelectorAll('#weatherOverrideRow button[data-wo]').forEach(b => {
+      const v = b.dataset.wo;
+      b.classList.toggle('active', (state.weatherOverride || '') === v);
+    });
+  }
+  if ($('weatherOverrideRow')) {
+    _syncOverridePills();
+    document.querySelectorAll('#weatherOverrideRow button[data-wo]').forEach(b => {
+      b.addEventListener('click', () => {
+        const v = b.dataset.wo || null;
+        state.weatherOverride = v || null;
+        save();
+        _syncOverridePills();
+        renderWeatherChip();
+        renderWeatherOverlay();
+        if (typeof renderFireflies === 'function') renderFireflies();
+        if (typeof renderButterflies === 'function') renderButterflies();
+        if (typeof updateTreeMood === 'function') updateTreeMood();
+      });
+    });
+  }
+
   // iter 70: "Test Open-Meteo connection" — hits the API with a hardcoded location
   // so users can verify the network path independently of geolocation.
   if ($('weatherTestBtn')) {
@@ -3225,23 +3269,36 @@
     const fresh = state.weather.fetchedAt && (Date.now() - state.weather.fetchedAt) < 30 * 60 * 1000;
     if (!force && fresh) { renderWeatherChip(); return; }
     const unit = preferImperial() ? 'fahrenheit' : 'celsius';
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${state.geo.lat.toFixed(4)}&longitude=${state.geo.lng.toFixed(4)}&current=weather_code,cloud_cover,temperature_2m,is_day&timezone=auto&temperature_unit=${unit}`;
+    // iter 72: also pull precipitation/rain/showers/snowfall — weather_code can lag
+    // for light drizzle, so we use these as independent rain-signal fields.
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${state.geo.lat.toFixed(4)}&longitude=${state.geo.lng.toFixed(4)}&current=weather_code,cloud_cover,temperature_2m,is_day,precipitation,rain,showers,snowfall&timezone=auto&temperature_unit=${unit}`;
     try {
       const res = await fetch(url, { mode: 'cors' });
       if (!res.ok) throw new Error('http ' + res.status);
       const data = await res.json();
       const c = data.current || {};
+      // Derive bucket: precipitation/rain/showers/snowfall override the weather_code
+      // when present, since they're measured at the gridded location and update faster.
+      let bucket = wmoToBucket(c.weather_code);
+      const rainTotal = (Number(c.rain) || 0) + (Number(c.showers) || 0);
+      const snowTotal = Number(c.snowfall) || 0;
+      const precip = Number(c.precipitation) || 0;
+      if (snowTotal > 0) bucket = 'snow';
+      else if (rainTotal > 0 || precip > 0) bucket = 'rain';
       state.weather = {
         code: c.weather_code,
         cloudCover: c.cloud_cover,
         temperature: c.temperature_2m,
         isDay: c.is_day,
-        bucket: wmoToBucket(c.weather_code),
+        precipitation: precip,
+        rain: rainTotal,
+        snowfall: snowTotal,
+        bucket,
         fetchedAt: Date.now(),
         unit
       };
       save();
-      console.log('[weather] fetched', state.weather.bucket, state.weather.temperature + '°', '(code=' + state.weather.code + ', cloud=' + state.weather.cloudCover + '%, isDay=' + state.weather.isDay + ')');
+      console.log('[weather] fetched', state.weather.bucket, state.weather.temperature + '°', '(code=' + state.weather.code + ', cloud=' + state.weather.cloudCover + '%, rain=' + rainTotal + 'mm, snow=' + snowTotal + 'cm, isDay=' + state.weather.isDay + ')');
       renderWeatherChip();
       renderWeatherStatus();
       renderWeatherOverlay();
@@ -3268,10 +3325,10 @@
   function renderWeatherChip() {
     const chip = $('weatherChip');
     if (!chip) return;
-    const w = state.weather;
-    // iter 69: if geo is granted but we have no weather yet, show a tiny placeholder
-    // chip so user has discoverability of the click-to-refresh affordance
-    if (!w || w.bucket == null) {
+    const apiW = state.weather;
+    const b = effectiveBucket();
+    // iter 69/72: if geo is granted but we have no weather (and no override), show a tiny placeholder
+    if (b == null) {
       if (state.geo && state.geo.granted) {
         chip.innerHTML = `<span class="glyph">·</span><span>—</span>`;
         chip.classList.remove('fresh');
@@ -3281,13 +3338,20 @@
       }
       return;
     }
-    const tempStr = w.temperature != null
-      ? Math.round(w.temperature) + '°' + (w.unit === 'fahrenheit' ? 'F' : 'C')
+    const tempStr = apiW && apiW.temperature != null
+      ? Math.round(apiW.temperature) + '°' + (apiW.unit === 'fahrenheit' ? 'F' : 'C')
       : '';
-    chip.innerHTML = `<span class="glyph">${bucketGlyph(w.bucket, w.isDay)}</span><span>${tempStr}</span>`;
-    const isFresh = w.fetchedAt && (Date.now() - w.fetchedAt) < 60 * 60 * 1000;
+    const overrideMark = state.weatherOverride ? '<span class="override-dot" title="Manual weather override active">●</span>' : '';
+    chip.innerHTML = `<span class="glyph">${bucketGlyph(b, apiW && apiW.isDay)}</span><span>${tempStr}</span>${overrideMark}`;
+    const isFresh = apiW && apiW.fetchedAt && (Date.now() - apiW.fetchedAt) < 60 * 60 * 1000;
     chip.classList.toggle('fresh', !!isFresh);
     chip.hidden = false;
+  }
+
+  // iter 72: effective bucket — user override beats the API
+  function effectiveBucket() {
+    if (state.weatherOverride) return state.weatherOverride;
+    return state.weather && state.weather.bucket;
   }
 
   // --- weather visual overlay (rain / snow / clouds / stars) ---
@@ -3295,8 +3359,11 @@
     const el = $('weatherOverlay');
     if (!el) return;
     el.innerHTML = '';
-    const w = state.weather;
-    if (!w || w.bucket == null) return;
+    const apiW = state.weather || {};
+    const b = effectiveBucket();
+    if (b == null) return;
+    // iter 72: build a non-mutating effective weather object so override doesn't leak into state
+    const w = { ...apiW, bucket: b };
 
     // deterministic-ish pseudo-random so layout is stable per session
     let s = 17 + (w.code || 0);
