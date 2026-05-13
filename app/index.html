@@ -914,6 +914,26 @@
   .week-bar-wrap.stacked .week-bar:last-child { border-radius: 0 0 0 0; }
   .week-col .day-override { font-size: 10px; color: var(--muted); margin-top: 2px; }
   .week-summary .sq-summary { display: inline-block; margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--line); }
+  /* iter 66 — category breakdown bar */
+  .week-cat-breakdown { margin-top: 14px; }
+  .week-cat-breakdown h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin: 0 0 8px; display: flex; align-items: center; justify-content: space-between; }
+  .week-cat-breakdown h4 .count { color: var(--accent-2); font-weight: 600; text-transform: none; letter-spacing: 0; font-size: 11px; }
+  .cat-bar { display: flex; height: 28px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+  .cat-seg { display: flex; align-items: center; justify-content: center; gap: 4px; color: rgba(0,0,0,0.78); font-size: 11px; font-weight: 600; min-width: 28px; overflow: hidden; white-space: nowrap; }
+  .cat-seg .cat-label { font-weight: 500; opacity: 0.85; }
+  .cat-seg.cat-work { background: #ffb84d; }
+  .cat-seg.cat-chores { background: #c9a07a; }
+  .cat-seg.cat-health { background: #74e0a4; }
+  .cat-seg.cat-eat { background: #f08a78; }
+  .cat-seg.cat-other { background: #8a93a6; }
+  .cat-missing { font-size: 12px; color: var(--muted); margin-top: 8px; font-style: italic; }
+  /* category row pills get small color tints to match the bar */
+  .task-cat-row button { font-size: 11px; padding: 4px 9px; }
+  .task-cat-row button.active[data-cat="work"]   { background: rgba(255,184,77,0.15); color: #ffb84d; border-color: rgba(255,184,77,0.45); }
+  .task-cat-row button.active[data-cat="chores"] { background: rgba(201,160,122,0.15); color: #c9a07a; border-color: rgba(201,160,122,0.45); }
+  .task-cat-row button.active[data-cat="health"] { background: rgba(116,224,164,0.15); color: var(--accent-2); border-color: rgba(116,224,164,0.45); }
+  .task-cat-row button.active[data-cat="eat"]    { background: rgba(240,138,120,0.15); color: #f08a78; border-color: rgba(240,138,120,0.45); }
+  .task-cat-row button.active[data-cat="other"]  { background: rgba(138,147,166,0.15); color: var(--muted); border-color: rgba(138,147,166,0.45); }
   .week-summary { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 14px; flex-wrap: wrap; }
   .week-summary b { color: var(--text); font-weight: 700; }
 
@@ -1601,6 +1621,16 @@
       <button data-type="side">Side quest</button>
     </div>
 
+    <!-- iter 66: need sub-category — visible only when discipline on AND type=need -->
+    <div id="taskCatRow" class="task-type-row task-cat-row" hidden>
+      <span class="small">Category:</span>
+      <button data-cat="work">work</button>
+      <button data-cat="chores">chores</button>
+      <button data-cat="health">health</button>
+      <button data-cat="eat">eat</button>
+      <button data-cat="other">other</button>
+    </div>
+
     <div class="timer-row">
       <div id="timer" class="timer">25:00</div>
       <div class="controls" id="timerControls">
@@ -1893,6 +1923,8 @@
     <p class="small">Focus blocks per day — last 7 days.</p>
     <div class="week-grid" id="weekGrid"></div>
     <div class="week-summary" id="weekSummary"></div>
+    <!-- iter 66: need-category breakdown, hidden when no categories tagged -->
+    <div class="week-cat-breakdown" id="weekCatBreakdown" hidden></div>
     <div class="insights" id="insights"></div>
     <div class="reflections-list" id="reflectionsList"></div>
     <div class="actions" style="justify-content:space-between; margin-top:18px;">
@@ -1980,6 +2012,7 @@
   // user can see their own pattern. Default off so existing users get no change.
   state.needsDiscipline ??= { enabled: false, ratio: 2 };
   state.taskType ??= 'need'; // 'need' | 'side'
+  state.taskCategory ??= null; // 'work' | 'chores' | 'health' | 'eat' | 'other' | null
   state.duration ??= 25;
   state.parkList ??= [];
   // Migrate string[] → {text, ts, embedding}[] (iter 56). Backward-compat.
@@ -2013,6 +2046,10 @@
     // for users who don't use the feature, and avoids retroactively classifying.
     if (state.needsDiscipline && state.needsDiscipline.enabled) {
       block.type = (state.taskType === 'side') ? 'side' : 'need';
+      // iter 66: sub-category for Need blocks (work/chores/health/eat/other)
+      if (block.type === 'need' && state.taskCategory) {
+        block.category = state.taskCategory;
+      }
     }
     h.blocks.push(block);
   }
@@ -3711,6 +3748,39 @@
       summary += `<span class="sq-summary"><b style="color:var(--accent);">${totalNeed}</b> needs · <b style="color:var(--accent-2);">${totalSide}</b> side quests${totalOverrides > 0 ? ` · <b style="color:var(--warn);">${totalOverrides}</b> override${totalOverrides === 1 ? '' : 's'}` : ''}</span>`;
     }
     $('weekSummary').innerHTML = summary;
+
+    // iter 66: need-category breakdown when any block in the week has a category
+    const catCounts = { work: 0, chores: 0, health: 0, eat: 0, other: 0 };
+    days.forEach(d => {
+      const h = state.history[d.key];
+      if (!h || !Array.isArray(h.blocks)) return;
+      h.blocks.forEach(b => {
+        if (b.type === 'need' && b.category && Object.prototype.hasOwnProperty.call(catCounts, b.category)) {
+          catCounts[b.category]++;
+        }
+      });
+    });
+    const catTotal = Object.values(catCounts).reduce((s, n) => s + n, 0);
+    const catWrap = $('weekCatBreakdown');
+    if (catWrap) {
+      if (catTotal === 0) {
+        catWrap.hidden = true;
+        catWrap.innerHTML = '';
+      } else {
+        catWrap.hidden = false;
+        const segs = ['work','chores','health','eat','other'].map(k => {
+          const n = catCounts[k];
+          if (n === 0) return null;
+          const pct = (n / catTotal) * 100;
+          return `<div class="cat-seg cat-${k}" style="width:${pct.toFixed(2)}%" title="${k}: ${n} block${n === 1 ? '' : 's'} (${pct.toFixed(0)}%)"><span class="cat-label">${k}</span><b>${n}</b></div>`;
+        }).filter(Boolean);
+        const missing = ['work','chores','health','eat'].filter(k => catCounts[k] === 0);
+        const missingNote = missing.length
+          ? `<div class="cat-missing">Light on: ${missing.join(', ')}</div>`
+          : '';
+        catWrap.innerHTML = `<h4>Need categories <span class="count">${catTotal}</span></h4><div class="cat-bar">${segs.join('')}</div>${missingNote}`;
+      }
+    }
     // intentions + reflections list (intent in the morning, reflect at night)
     const dayEntries = days
       .filter(d => d.reflection || d.intention)
@@ -3825,9 +3895,17 @@
     const enabled = !!(state.needsDiscipline && state.needsDiscipline.enabled);
     const row = $('taskTypeRow');
     const pill = $('sqStatus');
+    const catRow = $('taskCatRow');
     if (!row || !pill) return;
     row.hidden = !enabled;
     pill.hidden = !enabled;
+    // iter 66: category row only when discipline is on AND a Need is selected
+    if (catRow) catRow.hidden = !enabled || state.taskType !== 'need';
+    if (catRow && !catRow.hidden) {
+      catRow.querySelectorAll('button[data-cat]').forEach(b => {
+        b.classList.toggle('active', b.dataset.cat === state.taskCategory);
+      });
+    }
     if (!enabled) return;
     const ratio = (state.needsDiscipline.ratio || 2);
     const n = needsBlocksToday();
@@ -3874,6 +3952,17 @@
         // We allow the visual switch; the lock fires on Start.
       }
       state.taskType = t;
+      save();
+      renderSideQuest();
+    };
+  });
+
+  // iter 66: wire the category pill row. Clicking the active one un-tags
+  // (toggle off) so users can leave a Need uncategorized.
+  document.querySelectorAll('#taskCatRow button[data-cat]').forEach(b => {
+    b.onclick = () => {
+      const c = b.dataset.cat;
+      state.taskCategory = (state.taskCategory === c) ? null : c;
       save();
       renderSideQuest();
     };
