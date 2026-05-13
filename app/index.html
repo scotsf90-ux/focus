@@ -2615,6 +2615,8 @@
     if (typeof updateGreeting === 'function') updateGreeting();
     if (typeof renderIntention === 'function') renderIntention();
     if (typeof cutoffTick === 'function') cutoffTick();
+    // iter 68: refresh side-quest status pill so today's count resets visibly at midnight
+    if (typeof renderSideQuest === 'function') renderSideQuest();
     // brief notification so the user knows their day reset
     if (typeof notify === 'function') notify('New day', 'Stats reset. Yesterday\'s blocks are saved in the week view.');
   }
