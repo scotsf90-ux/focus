@@ -1846,6 +1846,11 @@
       <span class="small">Status:</span>
       <span id="geoStatus" class="small"><b style="color: var(--muted);">not granted</b></span>
     </div>
+    <!-- iter 69: weather state surface + manual refresh -->
+    <div id="weatherStatus" class="small" style="color: var(--muted); margin-top:6px; line-height:1.4;"></div>
+    <div class="row" style="margin-top:6px;">
+      <button id="weatherRefreshBtn" class="ghost" style="font-size:13px; padding:6px 12px;" hidden>Refresh location &amp; weather</button>
+    </div>
     <div class="small" style="color: var(--muted); margin-top:6px; line-height:1.4;">
       Used only on-device to fetch weather. Coordinates never leave your browser except to <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> for the forecast.
     </div>
@@ -2776,6 +2781,7 @@
     renderContactsList();
     refreshNotifStatus();
     refreshGeoStatus();
+    if (typeof renderWeatherStatus === 'function') renderWeatherStatus();
     if (typeof refreshSyncUI === 'function') refreshSyncUI();
     $('settingsOverlay').classList.add('show');
   }
@@ -3018,12 +3024,19 @@
       el.innerHTML = '<b style="color: var(--muted);">not granted</b>';
     }
   }
-  function requestGeo() {
+  function requestGeo(opts = {}) {
+    const { fresh = false } = opts;
     if (!navigator.geolocation) {
       state.geo = { ...state.geo, granted: false, error: 'unsupported' };
-      save(); refreshGeoStatus();
+      save(); refreshGeoStatus(); renderWeatherStatus();
       return;
     }
+    // iter 69: for "Refresh" we want truly current coordinates, not a 24h cache.
+    // Drop the maximumAge dramatically on user-initiated refresh; keep a modest
+    // 1h cache on the initial grant for performance.
+    const positionOpts = fresh
+      ? { timeout: 15000, maximumAge: 0, enableHighAccuracy: true }
+      : { timeout: 10000, maximumAge: 60 * 60 * 1000 };
     navigator.geolocation.getCurrentPosition(
       pos => {
         state.geo = {
@@ -3034,20 +3047,55 @@
           error: null
         };
         save(); refreshGeoStatus();
-        fetchWeather(true); // first fetch on grant
+        console.log('[geo] fixed at', pos.coords.latitude.toFixed(4), pos.coords.longitude.toFixed(4), 'accuracy ±' + Math.round(pos.coords.accuracy || 0) + 'm');
+        fetchWeather(true).then(() => renderWeatherStatus());
       },
       err => {
         state.geo = {
-          granted: false,
+          granted: state.geo.granted, // preserve toggle state if it was a transient error
           lat: state.geo.lat,
           lng: state.geo.lng,
           lastFetch: state.geo.lastFetch,
           error: err.code || 'error'
         };
-        save(); refreshGeoStatus();
+        if (err.code === 1) state.geo.granted = false; // permission denied
+        save(); refreshGeoStatus(); renderWeatherStatus();
+        console.warn('[geo] error', err.code, err.message);
       },
-      { timeout: 10000, maximumAge: 24 * 3600 * 1000 }
+      positionOpts
     );
+  }
+  // iter 69: surface weather state + last fetched time so users can see whether
+  // their stale-looking weather is a cache, a fetch error, or a wrong location
+  function renderWeatherStatus() {
+    const el = $('weatherStatus');
+    const btn = $('weatherRefreshBtn');
+    if (!el || !btn) return;
+    if (!state.geo || !state.geo.granted) {
+      el.innerHTML = '';
+      btn.hidden = true;
+      return;
+    }
+    btn.hidden = false;
+    const w = state.weather || {};
+    const parts = [];
+    if (w.bucket) {
+      const tempStr = w.temperature != null
+        ? Math.round(w.temperature) + '°' + (w.unit === 'fahrenheit' ? 'F' : 'C')
+        : '';
+      parts.push(`<b style="color: var(--text);">${w.bucket}${tempStr ? ', ' + tempStr : ''}</b> ${bucketGlyph(w.bucket, w.isDay)}`);
+    } else {
+      parts.push('<span style="color: var(--muted);">No weather data yet.</span>');
+    }
+    if (w.fetchedAt) {
+      const ageMin = Math.round((Date.now() - w.fetchedAt) / 60000);
+      const ageStr = ageMin < 1 ? 'just now' : ageMin < 60 ? `${ageMin}m ago` : `${Math.round(ageMin / 60)}h ago`;
+      parts.push(`<span style="color: var(--muted);">fetched ${ageStr}</span>`);
+    }
+    if (state.geo.lat != null) {
+      parts.push(`<span style="color: var(--muted);">${state.geo.lat.toFixed(3)}, ${state.geo.lng.toFixed(3)}</span>`);
+    }
+    el.innerHTML = parts.join(' · ');
   }
   if ($('geoEnabled')) {
     $('geoEnabled').addEventListener('change', e => {
@@ -3055,8 +3103,30 @@
         requestGeo();
       } else {
         state.geo = { ...state.geo, granted: false };
-        save(); refreshGeoStatus();
+        save(); refreshGeoStatus(); renderWeatherStatus();
       }
+    });
+  }
+  // iter 69: manual "Refresh location & weather" button
+  if ($('weatherRefreshBtn')) {
+    $('weatherRefreshBtn').addEventListener('click', () => {
+      const btn = $('weatherRefreshBtn');
+      btn.disabled = true;
+      btn.textContent = 'Refreshing…';
+      requestGeo({ fresh: true });
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = 'Refresh location & weather';
+      }, 2500);
+    });
+  }
+  // iter 69: clicking the header weather chip refreshes (cheap discoverability)
+  if ($('weatherChip')) {
+    $('weatherChip').style.cursor = 'pointer';
+    $('weatherChip').title = 'Click to refresh location & weather';
+    $('weatherChip').addEventListener('click', () => {
+      if (!state.geo || !state.geo.granted) return;
+      requestGeo({ fresh: true });
     });
   }
 
@@ -3110,13 +3180,27 @@
         unit
       };
       save();
+      console.log('[weather] fetched', state.weather.bucket, state.weather.temperature + '°', '(code=' + state.weather.code + ', cloud=' + state.weather.cloudCover + '%, isDay=' + state.weather.isDay + ')');
       renderWeatherChip();
+      renderWeatherStatus();
       renderWeatherOverlay();
       renderFireflies();
       renderButterflies();
       updateTreeMood();
     } catch (e) {
-      // silent — keep stale data visible
+      console.warn('[weather] fetch failed:', e && e.message);
+      // surface the error in the status line so user knows the cache is stale
+      const el = $('weatherStatus');
+      if (el) {
+        const w = state.weather || {};
+        let msg = `<span style="color: var(--warn);">Couldn't reach Open-Meteo</span>`;
+        if (w.fetchedAt) {
+          const ageMin = Math.round((Date.now() - w.fetchedAt) / 60000);
+          const ageStr = ageMin < 60 ? `${ageMin}m` : `${Math.round(ageMin / 60)}h`;
+          msg += ` <span style="color: var(--muted);">— showing data from ${ageStr} ago</span>`;
+        }
+        el.innerHTML = msg;
+      }
       renderWeatherChip();
     }
   }
@@ -3124,7 +3208,18 @@
     const chip = $('weatherChip');
     if (!chip) return;
     const w = state.weather;
-    if (!w || w.bucket == null) { chip.hidden = true; return; }
+    // iter 69: if geo is granted but we have no weather yet, show a tiny placeholder
+    // chip so user has discoverability of the click-to-refresh affordance
+    if (!w || w.bucket == null) {
+      if (state.geo && state.geo.granted) {
+        chip.innerHTML = `<span class="glyph">·</span><span>—</span>`;
+        chip.classList.remove('fresh');
+        chip.hidden = false;
+      } else {
+        chip.hidden = true;
+      }
+      return;
+    }
     const tempStr = w.temperature != null
       ? Math.round(w.temperature) + '°' + (w.unit === 'fahrenheit' ? 'F' : 'C')
       : '';
