@@ -1846,10 +1846,12 @@
       <span class="small">Status:</span>
       <span id="geoStatus" class="small"><b style="color: var(--muted);">not granted</b></span>
     </div>
-    <!-- iter 69: weather state surface + manual refresh -->
+    <!-- iter 69/70: weather state surface + manual refresh + connection test -->
     <div id="weatherStatus" class="small" style="color: var(--muted); margin-top:6px; line-height:1.4;"></div>
-    <div class="row" style="margin-top:6px;">
+    <div id="weatherTestResult" class="small" style="margin-top:6px; line-height:1.4; min-height: 1.4em;"></div>
+    <div class="row" style="margin-top:6px; gap: 6px; flex-wrap: wrap;">
       <button id="weatherRefreshBtn" class="ghost" style="font-size:13px; padding:6px 12px;" hidden>Refresh location &amp; weather</button>
+      <button id="weatherTestBtn" class="ghost" style="font-size:13px; padding:6px 12px;">Test Open-Meteo connection</button>
     </div>
     <div class="small" style="color: var(--muted); margin-top:6px; line-height:1.4;">
       Used only on-device to fetch weather. Coordinates never leave your browser except to <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color: var(--accent-2);">Open-Meteo</a> for the forecast.
@@ -3107,17 +3109,70 @@
       }
     });
   }
-  // iter 69: manual "Refresh location & weather" button
+  // iter 69/70: manual "Refresh location & weather" button — louder feedback
+  function _setTestResult(html, color) {
+    const el = $('weatherTestResult');
+    if (!el) return;
+    el.innerHTML = html;
+    el.style.color = color || 'var(--muted)';
+  }
   if ($('weatherRefreshBtn')) {
     $('weatherRefreshBtn').addEventListener('click', () => {
       const btn = $('weatherRefreshBtn');
       btn.disabled = true;
-      btn.textContent = 'Refreshing…';
+      btn.textContent = '⟳ Refreshing…';
+      _setTestResult('<span style="color: var(--muted);">Asking the browser for fresh coordinates…</span>');
+      // Snapshot so we can detect change after fetch
+      const beforeFetched = state.weather && state.weather.fetchedAt;
       requestGeo({ fresh: true });
-      setTimeout(() => {
+      // Poll for completion (state.weather.fetchedAt advances on success)
+      const start = Date.now();
+      const poll = setInterval(() => {
+        const elapsed = Date.now() - start;
+        const w = state.weather || {};
+        if (w.fetchedAt && w.fetchedAt !== beforeFetched) {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.textContent = 'Refresh location & weather';
+          const tempStr = w.temperature != null ? Math.round(w.temperature) + '°' + (w.unit === 'fahrenheit' ? 'F' : 'C') : '';
+          _setTestResult(`<b style="color: var(--accent-2);">✓ Fetched</b> ${bucketGlyph(w.bucket, w.isDay)} <b>${w.bucket}${tempStr ? ', ' + tempStr : ''}</b>`, 'var(--text)');
+        } else if (elapsed > 15000) {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.textContent = 'Refresh location & weather';
+          _setTestResult('<span style="color: var(--warn);">✗ Nothing came back within 15s — check console for the actual error</span>');
+        }
+      }, 200);
+    });
+  }
+  // iter 70: "Test Open-Meteo connection" — hits the API with a hardcoded location
+  // so users can verify the network path independently of geolocation.
+  if ($('weatherTestBtn')) {
+    $('weatherTestBtn').addEventListener('click', async () => {
+      const btn = $('weatherTestBtn');
+      btn.disabled = true;
+      btn.textContent = '⟳ Testing…';
+      _setTestResult('<span style="color: var(--muted);">Pinging Open-Meteo (London, UK as a test location)…</span>');
+      const startMs = Date.now();
+      try {
+        const url = 'https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.13&current=weather_code,temperature_2m,is_day&timezone=auto&temperature_unit=celsius';
+        const res = await fetch(url, { mode: 'cors' });
+        const took = Date.now() - startMs;
+        if (!res.ok) {
+          _setTestResult(`<span style="color: var(--warn);">✗ HTTP ${res.status} from Open-Meteo — service may be down</span>`);
+          return;
+        }
+        const data = await res.json();
+        const c = (data && data.current) || {};
+        const bucket = wmoToBucket(c.weather_code);
+        _setTestResult(`<b style="color: var(--accent-2);">✓ Connected in ${took}ms.</b> <span style="color: var(--muted);">London: ${bucket}, ${Math.round(c.temperature_2m)}°C (code ${c.weather_code})</span>`, 'var(--text)');
+      } catch (e) {
+        _setTestResult(`<span style="color: var(--warn);">✗ Network error: ${(e && e.message) || 'unknown'}</span>`);
+        console.warn('[weather] test failed:', e);
+      } finally {
         btn.disabled = false;
-        btn.textContent = 'Refresh location & weather';
-      }, 2500);
+        btn.textContent = 'Test Open-Meteo connection';
+      }
     });
   }
   // iter 69: clicking the header weather chip refreshes (cheap discoverability)
