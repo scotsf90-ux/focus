@@ -927,6 +927,19 @@
   .cat-seg.cat-eat { background: #f08a78; }
   .cat-seg.cat-other { background: #8a93a6; }
   .cat-missing { font-size: 12px; color: var(--muted); margin-top: 8px; font-style: italic; }
+  /* iter 67 — cutoff overlay discipline summary */
+  .cutoff-sq {
+    background: rgba(116,224,164,0.05);
+    border: 1px solid rgba(116,224,164,0.18);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: left;
+  }
+  .cutoff-sq b { color: var(--text); }
+  .cutoff-sq .sq-earned-line { color: var(--muted); font-style: italic; display: block; margin-top: 6px; }
   /* category row pills get small color tints to match the bar */
   .task-cat-row button { font-size: 11px; padding: 4px 9px; }
   .task-cat-row button.active[data-cat="work"]   { background: rgba(255,184,77,0.15); color: #ffb84d; border-color: rgba(255,184,77,0.45); }
@@ -1730,6 +1743,8 @@
     <h2 id="cutoffTitle">You're done for today</h2>
     <p class="prompt">It's past your end-of-day cutoff.<br>Close the laptop. Step outside. Find a human.</p>
     <div id="cutoffContacts" class="contact-row" style="justify-content:center; margin-bottom:14px;"></div>
+    <!-- iter 67: today's discipline summary -->
+    <div id="cutoffSqSummary" class="cutoff-sq" hidden></div>
     <div class="reflection-wrap">
       <label for="reflectionInput" class="small" style="display:block; text-align:left; margin-bottom:6px;">One sentence — what went well today?</label>
       <textarea id="reflectionInput" rows="2" placeholder="Optional. The tool remembers."></textarea>
@@ -2498,6 +2513,7 @@
         save();
         if (!anyOverlayOpen()) {
           renderCutoffContacts();
+          if (typeof renderCutoffSqSummary === 'function') renderCutoffSqSummary();
           $('cutoffOverlay').classList.add('show');
           notify('End of day', 'Time to stop working. Go outside.');
         }
@@ -3673,7 +3689,66 @@
     if (i.avgMinutes >= 10) {
       parts.push(`Average block: <b>${i.avgMinutes} min</b>`);
     }
+    // iter 67: discipline insights — only show when discipline-tagged data exists in the last 7 days
+    if (state.needsDiscipline && state.needsDiscipline.enabled) {
+      const last7 = [];
+      for (let i2 = 0; i2 < 7; i2++) {
+        const d = new Date(); d.setDate(d.getDate() - i2);
+        const k = d.toISOString().slice(0,10);
+        last7.push(state.history[k]);
+      }
+      const needs = last7.reduce((s,h)=>s + dayNeedBlocks(h), 0);
+      const sides = last7.reduce((s,h)=>s + daySideBlocks(h), 0);
+      const overrides = last7.reduce((s,h)=>s + dayOverrides(h), 0);
+      if (needs + sides > 0) {
+        const ratioActual = sides > 0 ? (needs / sides).toFixed(1) : 'all need';
+        const targetRatio = (state.needsDiscipline.ratio || 2);
+        const onTarget = sides === 0 ? true : (needs / sides) >= targetRatio;
+        parts.push(`Need / side ratio: <b>${ratioActual}${sides > 0 ? ':1' : ''}</b>${sides > 0 ? ` <span class="${onTarget ? 'delta-up' : 'delta-down'}">(target ${targetRatio}:1)</span>` : ''}`);
+      }
+      if (overrides > 0) {
+        // which day-of-week has most overrides
+        const dowOverrides = [0,0,0,0,0,0,0];
+        const dowNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        last7.forEach((h, idx) => {
+          const d = new Date(); d.setDate(d.getDate() - idx);
+          dowOverrides[d.getDay()] += dayOverrides(h);
+        });
+        const topDow = dowOverrides.indexOf(Math.max(...dowOverrides));
+        const topCount = dowOverrides[topDow];
+        if (topCount >= 2) {
+          parts.push(`<b>${overrides}</b> override${overrides === 1 ? '' : 's'} this week, mostly <b>${dowNames[topDow]}</b>`);
+        } else {
+          parts.push(`<b>${overrides}</b> override${overrides === 1 ? '' : 's'} this week`);
+        }
+      }
+    }
     el.innerHTML = parts.length ? parts.join(' &middot; ') : '<span class="insights-empty">Keep going — patterns will surface as you log more.</span>';
+  }
+
+  // iter 67: cutoff overlay summary — what you earned, used, missed today
+  function renderCutoffSqSummary() {
+    const el = $('cutoffSqSummary');
+    if (!el) return;
+    if (!state.needsDiscipline || !state.needsDiscipline.enabled) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    const n = needsBlocksToday();
+    const used = sideBlocksToday();
+    const earned = earnedUnlocks();
+    const unused = Math.max(0, earned - used);
+    const overrides = dayOverrides(state.history[today]);
+    const lines = [];
+    lines.push(`<b>Today:</b> ${n} need block${n === 1 ? '' : 's'} · ${used} side quest${used === 1 ? '' : 's'} · ${overrides} override${overrides === 1 ? '' : 's'}`);
+    if (unused > 0) {
+      lines.push(`<span class="sq-earned-line">You earned <b>${earned}</b>, used <b>${used}</b> — ${unused} unlock${unused === 1 ? '' : 's'} you didn't take. What were they going to be?</span>`);
+    } else if (overrides > 0 && used >= 1) {
+      lines.push(`<span class="sq-earned-line">You overrode the lock <b>${overrides}</b> time${overrides === 1 ? '' : 's'}. That's information — not a verdict.</span>`);
+    }
+    el.hidden = false;
+    el.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
   }
 
   // --- weekly look-back ---
