@@ -4845,8 +4845,15 @@
       const seenK = new Set(lBreaks.map(b => b.id));
       const brks = [...lBreaks];
       for (const b of rBreaks) if (b && b.id && !seenK.has(b.id)) brks.push(b);
+      // iter 68: unionize side-quest override events too
+      const lOver = Array.isArray(lh.overrides) ? lh.overrides : [];
+      const rOver = Array.isArray(rh.overrides) ? rh.overrides : [];
+      const seenO = new Set(lOver.map(b => b.id));
+      const overrides = [...lOver];
+      for (const b of rOver) if (b && b.id && !seenO.has(b.id)) overrides.push(b);
       if (blocks.length || lh.blocks || rh.blocks) merged.blocks = blocks;
       if (brks.length || lh.brks || rh.brks) merged.brks = brks;
+      if (overrides.length || lh.overrides || rh.overrides) merged.overrides = overrides;
       // reflection: latest savedAt wins; if shapes differ (string vs object), object wins
       const lRefl = lh.reflection;
       const rRefl = rh.reflection;
