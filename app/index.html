@@ -423,6 +423,44 @@
     padding: 1px 6px;
     border-radius: 999px;
   }
+  /* iter 77 — mark complete action row + sparkles */
+  .task-actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  .task-complete-btn {
+    background: transparent;
+    border: 1px dashed var(--line);
+    color: var(--muted);
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .task-complete-btn:hover {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+    background: rgba(116,224,164,0.06);
+  }
+  .task-tag.tag-done { background: rgba(116,224,164,0.18); color: var(--accent-2); border: 1px solid rgba(116,224,164,0.4); }
+  .task-list-full .task-row.is-complete .task-text { text-decoration: line-through; opacity: 0.78; }
+  .complete-spark {
+    position: fixed;
+    pointer-events: none;
+    font-size: 16px;
+    color: var(--accent-2);
+    z-index: 60;
+    animation: completeRise var(--dur, 1.2s) ease-out forwards;
+    animation-delay: var(--delay, 0s);
+    will-change: transform, opacity;
+  }
+  @keyframes completeRise {
+    0%   { transform: translate(0, 0); opacity: 0; }
+    20%  { opacity: 1; }
+    100% { transform: translate(var(--drift, 0), calc(-1 * var(--rise, 60px))); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .complete-spark { animation: none; opacity: 0 !important; }
+  }
   /* iter 76 — "all tasks" pill */
   .recent-tasks .recent-task.all-tasks {
     color: var(--muted);
@@ -1749,6 +1787,10 @@
     <input id="taskInput" placeholder="What are you working on? (just one thing)" autocomplete="off" />
     <!-- iter 75: recent tasks — picker shown when input is empty, click to resume -->
     <div id="recentTasksRow" class="recent-tasks" hidden></div>
+    <!-- iter 77: when input has content, offer a mark-complete affordance -->
+    <div id="taskActionsRow" class="task-actions" hidden>
+      <button id="markCompleteBtn" class="task-complete-btn" title="Mark this task complete">✓ mark complete</button>
+    </div>
 
     <!-- iter 64/68: task type — visible only when Side quest discipline is on -->
     <div id="taskTypeRow" class="task-type-row" hidden>
@@ -2240,6 +2282,8 @@
   state.needsDiscipline ??= { enabled: false, ratio: 2 };
   state.taskType ??= 'need'; // 'need' | 'side'
   state.taskCategory ??= null; // 'work' | 'chores' | 'health' | 'eat' | 'other' | null
+  // iter 77: per-task metadata keyed by lowercase name — {completedAt}
+  state.taskMeta ??= {};
   state.duration ??= 25;
   state.parkList ??= [];
   // Migrate string[] → {text, ts, embedding}[] (iter 56). Backward-compat.
@@ -4473,11 +4517,14 @@
     if (typeof renderRecentTasks === 'function') renderRecentTasks();
   });
 
-  // iter 75: recent tasks picker — shows when input is empty, click to resume
+  // iter 75/77: recent tasks picker (when empty) OR mark-complete affordance (when has content)
   function renderRecentTasks() {
     const wrap = $('recentTasksRow');
+    const actions = $('taskActionsRow');
     if (!wrap) return;
     const inputVal = ($('taskInput').value || '').trim();
+    // iter 77: toggle mark-complete action row based on input content
+    if (actions) actions.hidden = !inputVal;
     // Hide while user is typing — they're starting fresh
     if (inputVal.length > 0) { wrap.hidden = true; return; }
     // Look back 30 days for tasks
@@ -4486,7 +4533,11 @@
       const d = new Date(); d.setDate(d.getDate() - i);
       keys.push(d.toISOString().slice(0, 10));
     }
-    const tasks = tasksFromHistory(keys).slice(0, 5); // top 5 most-recent
+    // iter 77: hide completed tasks from the resume picker — they're done by definition
+    const meta = state.taskMeta || {};
+    const tasks = tasksFromHistory(keys)
+      .filter(t => !(meta[t.text.toLowerCase()] && meta[t.text.toLowerCase()].completedAt))
+      .slice(0, 5); // top 5 most-recent open
     if (tasks.length === 0) { wrap.hidden = true; wrap.innerHTML = ''; return; }
     wrap.hidden = false;
     const pills = tasks.map(t => {
@@ -4505,6 +4556,9 @@
         const name = btn.dataset.task;
         $('taskInput').value = name;
         state.task = name;
+        // iter 77: resuming a completed task un-marks it
+        const k = name.toLowerCase();
+        if (state.taskMeta && state.taskMeta[k]) delete state.taskMeta[k].completedAt;
         save();
         syncTaskEmpty();
         wrap.hidden = true;
@@ -4546,10 +4600,14 @@
       const typeTag = t.types.includes('side') && !t.types.includes('need') ? '<span class="task-tag tag-side">side</span>'
         : t.types.includes('need') && !t.types.includes('side') ? '<span class="task-tag tag-need">need</span>'
         : t.types.length ? '<span class="task-tag tag-mixed">mixed</span>' : '';
-      return `<li class="task-row">
+      // iter 77: completion badge from state.taskMeta
+      const meta = (state.taskMeta || {})[t.text.toLowerCase()];
+      const completedBadge = (meta && meta.completedAt) ? '<span class="task-tag tag-done" title="Marked complete">✓ done</span>' : '';
+      return `<li class="task-row${meta && meta.completedAt ? ' is-complete' : ''}">
         <div class="task-main">
           <span class="task-text">${escapeHtml(t.text)}</span>
           ${typeTag}
+          ${completedBadge}
           <button class="task-resume" data-task="${escapeHtml(t.text)}" title="Resume as current task">Resume</button>
         </div>
         <div class="task-stats">
@@ -4565,6 +4623,9 @@
         const name = btn.dataset.task;
         $('taskInput').value = name;
         state.task = name;
+        // iter 77: resuming un-marks completion
+        const k = name.toLowerCase();
+        if (state.taskMeta && state.taskMeta[k]) delete state.taskMeta[k].completedAt;
         save();
         syncTaskEmpty();
         renderRecentTasks();
@@ -4578,6 +4639,55 @@
   document.querySelectorAll('[data-close="taskHistory"]').forEach(el => {
     el.addEventListener('click', () => $('taskHistoryOverlay').classList.remove('show'));
   });
+
+  // iter 77: mark current task complete with a small celebration
+  function celebrateComplete(originRect) {
+    // Floating ✓ + leaves rising from the task input — reuse the leaf-easter-egg vibe
+    const x = originRect ? (originRect.left + originRect.width / 2) : window.innerWidth / 2;
+    const y = originRect ? originRect.top + 8 : window.innerHeight / 2;
+    const N = 7;
+    const glyphs = ['🌿','✓','✦','🌿','✨','🌿','✓'];
+    for (let i = 0; i < N; i++) {
+      const el = document.createElement('div');
+      el.className = 'complete-spark';
+      el.textContent = glyphs[i % glyphs.length];
+      el.style.left = (x + (Math.random() - 0.5) * 80) + 'px';
+      el.style.top = y + 'px';
+      el.style.setProperty('--rise', (50 + Math.random() * 60).toFixed(0) + 'px');
+      el.style.setProperty('--drift', ((Math.random() - 0.5) * 80).toFixed(0) + 'px');
+      el.style.setProperty('--dur', (1.1 + Math.random() * 0.5).toFixed(2) + 's');
+      el.style.setProperty('--delay', (Math.random() * 0.15).toFixed(2) + 's');
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2000);
+    }
+    try { beep(); } catch (_) {}
+  }
+  function markTaskComplete() {
+    const name = ($('taskInput').value || '').trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    state.taskMeta = state.taskMeta || {};
+    state.taskMeta[key] = { ...(state.taskMeta[key] || {}), completedAt: Date.now(), canonicalName: name };
+    // Clear current task — user just shipped it
+    state.task = '';
+    $('taskInput').value = '';
+    save();
+    syncTaskEmpty();
+    // Celebration originating from the input
+    const rect = $('taskInput').getBoundingClientRect();
+    celebrateComplete(rect);
+    // Small confirmation banner
+    const banner = $('doneBanner');
+    if (banner) {
+      banner.textContent = '✓ ' + name + ' — marked complete.';
+      banner.classList.add('show');
+      setTimeout(() => banner.classList.remove('show'), 4000);
+    }
+    renderRecentTasks();
+  }
+  if ($('markCompleteBtn')) {
+    $('markCompleteBtn').addEventListener('click', markTaskComplete);
+  }
 
   document.querySelectorAll('#durationPills button').forEach(b => {
     b.classList.toggle('active', Number(b.dataset.min) === state.duration);
