@@ -563,8 +563,7 @@
   }
   ul.park-list li {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     gap: 8px;
     padding: 8px 10px;
     border: 1px solid var(--line);
@@ -572,16 +571,103 @@
     margin-bottom: 6px;
     background: var(--panel-2);
     font-size: 14px;
+    position: relative;
+    transition: border-color .12s;
   }
-  ul.park-list li .x {
+  ul.park-list li:hover { border-color: rgba(116,224,164,0.35); }
+  ul.park-list li.shape-action { border-left: 3px solid var(--accent); }
+  ul.park-list li.shape-question { border-left: 3px solid var(--accent-2); }
+  ul.park-list .park-shape {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  ul.park-list .park-text { flex: 1; min-width: 0; word-break: break-word; }
+  /* iter 78: action buttons per dump — visible on hover/focus, always tappable on touch */
+  ul.park-list .park-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0.35;
+    transition: opacity .15s;
+  }
+  ul.park-list li:hover .park-actions,
+  ul.park-list li:focus-within .park-actions { opacity: 1; }
+  @media (hover: none) {
+    ul.park-list .park-actions { opacity: 1; }
+  }
+  ul.park-list .park-act {
+    background: transparent;
+    border: 1px solid var(--line);
     color: var(--muted);
     cursor: pointer;
-    background: transparent;
-    border: none;
-    font-size: 14px;
-    padding: 0 4px;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    transition: color .12s, border-color .12s;
   }
-  ul.park-list li .x:hover { color: var(--warn); }
+  ul.park-list .park-act:hover { color: var(--text); border-color: var(--muted); }
+  ul.park-list .park-act.task:hover { color: var(--accent); border-color: rgba(255,184,77,0.5); }
+  ul.park-list .park-act.side:hover { color: var(--accent-2); border-color: rgba(116,224,164,0.5); }
+  ul.park-list .park-act.x { border: none; padding: 0 4px; font-size: 14px; color: var(--muted); }
+  ul.park-list .park-act.x:hover { color: var(--warn); }
+
+  /* iter 78: cluster tease pill above the park list */
+  .park-cluster-tease {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 6px 10px;
+    background: rgba(116,224,164,0.07);
+    border: 1px solid rgba(116,224,164,0.25);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .park-cluster-tease .ct-glyph { font-size: 14px; }
+  .park-cluster-tease .ct-label { color: var(--muted); }
+  .park-cluster-tease .ct-name { color: var(--accent-2); }
+  .park-cluster-tease .ct-count {
+    background: rgba(116,224,164,0.18);
+    color: var(--accent-2);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
+  .park-cluster-tease .ct-more { color: var(--muted); font-size: 11px; }
+  .park-cluster-tease .ct-action {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid rgba(116,224,164,0.35);
+    color: var(--accent-2);
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .park-cluster-tease .ct-action:hover { background: rgba(116,224,164,0.15); }
+
+  /* iter 78: park stats footer */
+  .park-stats {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .park-stats b { color: var(--text); font-weight: 600; }
+  .park-stats .dot { opacity: 0.4; }
+  .park-stats .period { margin-left: auto; font-style: italic; }
   @keyframes parkSlideIn {
     from { opacity: 0; transform: translateY(-4px); max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; }
     to   { opacity: 1; transform: translateY(0); max-height: 60px; padding-top: 8px; padding-bottom: 8px; margin-top: 0; }
@@ -1834,11 +1920,15 @@
         Brain dump <span class="hint">parking lot for thoughts that aren't this task</span>
       </h3>
       <input id="parkInput" placeholder="Type a stray thought, hit Enter, get back to work" />
+      <!-- iter 78: inline cluster pill — surfaces ML clusters where the dumps live -->
+      <div id="parkClusterTease" class="park-cluster-tease" hidden></div>
       <ul id="parkList" class="park-list"></ul>
       <div id="parkEmpty" class="park-empty">
         No stray thoughts yet.<br>
         They'll wait here when something pops up — so you can keep working.
       </div>
+      <!-- iter 78: stats footer — parking-lot throughput so the work is visible -->
+      <div id="parkStats" class="park-stats" hidden></div>
       <div class="row" style="margin-top: 10px; justify-content: flex-end;">
         <button id="settleBtn" class="ghost" style="font-size: 12px; padding: 5px 10px;" hidden>Settle your thoughts</button>
       </div>
@@ -2284,6 +2374,8 @@
   state.taskCategory ??= null; // 'work' | 'chores' | 'health' | 'eat' | 'other' | null
   // iter 77: per-task metadata keyed by lowercase name — {completedAt}
   state.taskMeta ??= {};
+  // iter 78: brain-dump throughput counters — rolling weekly tallies, reset on rollover
+  state.parkStats ??= { addedTs: [], settledTs: [], promotedTs: [] };
   state.duration ??= 25;
   state.parkList ??= [];
   // Migrate string[] → {text, ts, embedding}[] (iter 56). Backward-compat.
@@ -4040,6 +4132,9 @@
         const idx = (state.parkList || []).findIndex(x => _dumpText(x) === txt);
         if (idx >= 0) {
           state.parkList.splice(idx, 1);
+          // iter 78: bump settled counter
+          state.parkStats = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
+          state.parkStats.settledTs.push(Date.now());
           save();
           if (typeof renderPark === 'function') renderPark();
           renderSettleSections(); // re-render so counts update
@@ -4059,6 +4154,9 @@
         const before = state.parkList.length;
         state.parkList = state.parkList.filter(x => !texts.includes(_dumpText(x)));
         const removed = before - state.parkList.length;
+        // iter 78: bulk-clear counts as N settled events
+        state.parkStats = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
+        for (let i = 0; i < removed; i++) state.parkStats.settledTs.push(Date.now());
         save();
         if (typeof renderPark === 'function') renderPark();
         renderSettleSections();
@@ -4781,6 +4879,95 @@
   // initial render
   renderSideQuest();
 
+  // iter 78: helper — promote a dump to the current task, optionally side-quest, remove from list
+  function _promoteDumpToTask(idx, asSide = false) {
+    const item = state.parkList[idx];
+    if (!item) return;
+    const text = _dumpText(item);
+    if (!text) return;
+    state.parkList.splice(idx, 1);
+    state.task = text;
+    if ($('taskInput')) $('taskInput').value = text;
+    if (asSide) state.taskType = 'side';
+    else if (state.needsDiscipline && state.needsDiscipline.enabled) state.taskType = 'need';
+    // throughput counter
+    state.parkStats = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
+    state.parkStats.promotedTs.push(Date.now());
+    save();
+    if (typeof syncTaskEmpty === 'function') syncTaskEmpty();
+    if (typeof renderSideQuest === 'function') renderSideQuest();
+    if (typeof renderRecentTasks === 'function') renderRecentTasks();
+    renderPark();
+    // Soft cue: subtle banner
+    const banner = $('doneBanner');
+    if (banner) {
+      banner.textContent = (asSide ? '→ side quest: ' : '→ the one thing: ') + text;
+      banner.classList.add('show');
+      setTimeout(() => banner.classList.remove('show'), 3500);
+    }
+  }
+
+  // iter 78: stats counters — rolling 7-day windows
+  function _trimStats() {
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    if (!state.parkStats) state.parkStats = { addedTs: [], settledTs: [], promotedTs: [] };
+    state.parkStats.addedTs = (state.parkStats.addedTs || []).filter(t => t > cutoff);
+    state.parkStats.settledTs = (state.parkStats.settledTs || []).filter(t => t > cutoff);
+    state.parkStats.promotedTs = (state.parkStats.promotedTs || []).filter(t => t > cutoff);
+  }
+
+  // iter 78: cluster tease — if smart clustering is on and a ≥2 cluster has formed, surface the top one
+  function renderParkClusterTease() {
+    const wrap = $('parkClusterTease');
+    if (!wrap) return;
+    if (!state.ml || !state.ml.enabled) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+    const embedded = (state.parkList || []).filter(d => Array.isArray(_dumpEmbedding(d)) && _dumpEmbedding(d).length);
+    if (embedded.length < 2) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+    let clusters;
+    try { clusters = clusterByEmbedding(embedded, 0.5); }
+    catch (_) { wrap.hidden = true; return; }
+    const groups = (clusters || []).filter(c => c.items.length >= 2);
+    if (!groups.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+    const top = groups[0];
+    const more = groups.length > 1 ? ` <span class="ct-more">+${groups.length - 1} more</span>` : '';
+    wrap.hidden = false;
+    wrap.innerHTML = `
+      <span class="ct-glyph">🌿</span>
+      <span class="ct-label">forming:</span>
+      <b class="ct-name">${escapeHtml(top.label)}</b>
+      <span class="ct-count">${top.items.length}</span>
+      ${more}
+      <button class="ct-action" id="parkClusterOpen">settle ›</button>
+    `;
+    const btn = $('parkClusterOpen');
+    if (btn) btn.onclick = () => { if (typeof openSettle === 'function') openSettle(); };
+  }
+
+  // iter 78: stats footer — N parked this week · M settled · K promoted to tasks
+  function renderParkStats() {
+    const el = $('parkStats');
+    if (!el) return;
+    _trimStats();
+    const ps = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
+    const added = ps.addedTs.length;
+    const settled = ps.settledTs.length;
+    const promoted = ps.promotedTs.length;
+    if (added === 0 && settled === 0 && promoted === 0) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = `
+      <span><b>${added}</b> parked</span>
+      <span class="dot">·</span>
+      <span><b>${settled}</b> settled</span>
+      <span class="dot">·</span>
+      <span><b>${promoted}</b> → tasks</span>
+      <span class="period">this week</span>
+    `;
+  }
+
   // brain dump
   function renderPark(animateFirst = false) {
     const ul = $('parkList');
@@ -4788,8 +4975,21 @@
     state.parkList.forEach((item, idx) => {
       const li = document.createElement('li');
       if (animateFirst && idx === 0) li.classList.add('entering');
+      const text = _dumpText(item);
+      // iter 78: shape tag — surface the keyword detection inline (small, low-noise)
+      const shape = detectAction(text) ? 'action' : (detectQuestion(text) ? 'question' : '');
+      if (shape) li.classList.add('shape-' + shape);
+      const shapeIcon = shape === 'action' ? '⚡' : shape === 'question' ? '?' : '';
+      if (shapeIcon) {
+        const s = document.createElement('span');
+        s.className = 'park-shape';
+        s.textContent = shapeIcon;
+        s.title = shape === 'action' ? 'Looks like a to-do' : 'Looks like a question';
+        li.appendChild(s);
+      }
       const span = document.createElement('span');
-      span.textContent = _dumpText(item);
+      span.className = 'park-text';
+      span.textContent = text;
       // Embedded dot — subtle visual cue when smart clustering has indexed this dump.
       if (_dumpEmbedding(item)) {
         const dot = document.createElement('span');
@@ -4799,16 +4999,46 @@
         dot.style.cssText = 'color: var(--accent-2); opacity: 0.6; margin-left: 4px; font-weight: 700;';
         span.appendChild(dot);
       }
+      li.appendChild(span);
+      // iter 78: action buttons — promote to task (always) and side quest (if discipline on)
+      const actions = document.createElement('div');
+      actions.className = 'park-actions';
+      const toTask = document.createElement('button');
+      toTask.className = 'park-act task';
+      toTask.title = 'Promote to the One Thing';
+      toTask.textContent = '→ task';
+      toTask.onclick = (e) => { e.stopPropagation(); _promoteDumpToTask(idx, false); };
+      actions.appendChild(toTask);
+      if (state.needsDiscipline && state.needsDiscipline.enabled) {
+        const toSide = document.createElement('button');
+        toSide.className = 'park-act side';
+        toSide.title = 'Promote as a Side quest';
+        toSide.textContent = '→ side';
+        toSide.onclick = (e) => { e.stopPropagation(); _promoteDumpToTask(idx, true); };
+        actions.appendChild(toSide);
+      }
       const x = document.createElement('button');
-      x.className = 'x';
+      x.className = 'park-act x';
+      x.title = 'Delete';
       x.textContent = '×';
-      x.onclick = () => { state.parkList.splice(idx,1); save(); renderPark(); };
-      li.appendChild(span); li.appendChild(x);
+      x.onclick = (e) => {
+        e.stopPropagation();
+        state.parkList.splice(idx,1);
+        state.parkStats = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
+        state.parkStats.settledTs.push(Date.now());
+        save();
+        renderPark();
+      };
+      actions.appendChild(x);
+      li.appendChild(actions);
       ul.appendChild(li);
     });
     // empty state visibility
     const empty = $('parkEmpty');
     if (empty) empty.classList.toggle('hidden', state.parkList.length > 0);
+    // iter 78: cluster tease + stats
+    renderParkClusterTease();
+    renderParkStats();
     // brain dumps drop leaves at the tree's base — re-render
     if (typeof renderTree === 'function') renderTree();
     if (typeof refreshSettleButton === 'function') refreshSettleButton();
@@ -4817,6 +5047,9 @@
     if (e.key === 'Enter' && e.target.value.trim()) {
       const dump = { text: e.target.value.trim(), ts: Date.now(), embedding: null };
       state.parkList.unshift(dump);
+      // iter 78: bump throughput counter
+      state.parkStats = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
+      state.parkStats.addedTs.push(Date.now());
       e.target.value = '';
       save(); renderPark(true);
       // Fire-and-forget embed if smart clustering is on. Re-render park when done
