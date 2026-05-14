@@ -1,7 +1,7 @@
 // Service worker for Vesper — offline support + cache-first delivery.
 // Cache version bumps on each deploy so users get fresh HTML automatically.
 
-const CACHE_NAME = 'one-thing-v20260513195203';
+const CACHE_NAME = 'one-thing-v20260513195315';
 const ASSETS = [
   './',
   './index.html',

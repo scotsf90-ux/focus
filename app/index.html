@@ -423,6 +423,26 @@
     padding: 1px 6px;
     border-radius: 999px;
   }
+  /* iter 76 — "all tasks" pill */
+  .recent-tasks .recent-task.all-tasks {
+    color: var(--muted);
+    border-style: dashed;
+    padding-right: 12px;
+  }
+  .recent-tasks .recent-task.all-tasks:hover { color: var(--accent-2); background: transparent; }
+  /* full-list view in task history overlay */
+  .task-list-full .task-resume {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    margin-left: auto;
+    transition: color .12s, border-color .12s;
+  }
+  .task-list-full .task-resume:hover { color: var(--accent-2); border-color: var(--accent-2); }
   /* iter 64 — task type pill row (Need / Side quest) */
   .task-type-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
   .task-type-row .small { color: var(--muted); font-size: 12px; }
@@ -1857,6 +1877,28 @@
   </div>
 </div>
 
+<!-- iter 76: All-time task history overlay -->
+<div id="taskHistoryOverlay" class="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="taskHistoryTitle">
+    <button class="icon-btn close" data-close="taskHistory" aria-label="Close">✕</button>
+    <h2 id="taskHistoryTitle">All tasks</h2>
+    <p class="small" id="taskHistoryIntro">Everything you've focused on, grouped by name.</p>
+    <div class="row" style="gap: 6px; margin-bottom: 12px; flex-wrap: wrap;">
+      <input id="taskHistorySearch" type="text" placeholder="Filter…" autocomplete="off" style="flex:1; min-width: 180px;" />
+      <select id="taskHistorySort" style="width: auto;">
+        <option value="recent">Recent first</option>
+        <option value="blocks">Most blocks</option>
+        <option value="time">Most time</option>
+        <option value="name">A → Z</option>
+      </select>
+    </div>
+    <div id="taskHistoryList"></div>
+    <div class="actions" style="justify-content:flex-end; margin-top:18px;">
+      <button data-close="taskHistory" class="primary">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- iter 68: Side quest override prompt — replaces native confirm() -->
 <div id="overrideOverlay" class="overlay">
   <div class="modal center" role="dialog" aria-modal="true" aria-labelledby="overrideTitle">
@@ -2722,7 +2764,7 @@
   setInterval(cutoffTick, 30 * 1000);
 
   function anyOverlayOpen() {
-    return ['overlay','cutoffOverlay','settingsOverlay','weekOverlay','settleOverlay','overrideOverlay'].some(id => {
+    return ['overlay','cutoffOverlay','settingsOverlay','weekOverlay','settleOverlay','overrideOverlay','taskHistoryOverlay'].some(id => {
       const el = $(id);
       return el && el.classList.contains('show');
     });
@@ -4451,9 +4493,15 @@
       const blockStr = `${t.blocks} block${t.blocks === 1 ? '' : 's'}`;
       return `<button class="recent-task" data-task="${escapeHtml(t.text)}" title="${escapeHtml(t.text)} · ${blockStr}"><span class="recent-text">${escapeHtml(t.text)}</span><span class="recent-count">${t.blocks}</span></button>`;
     }).join('');
-    wrap.innerHTML = `<span class="recent-label">resume:</span>${pills}`;
+    // iter 76: "all" pill opens the full history overlay
+    const allPill = `<button class="recent-task all-tasks" data-all="1" title="See all tasks ever worked on">all ›</button>`;
+    wrap.innerHTML = `<span class="recent-label">resume:</span>${pills}${allPill}`;
     wrap.querySelectorAll('button.recent-task').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (btn.dataset.all === '1') {
+          openTaskHistory();
+          return;
+        }
         const name = btn.dataset.task;
         $('taskInput').value = name;
         state.task = name;
@@ -4465,6 +4513,71 @@
     });
   }
   renderRecentTasks();
+
+  // iter 76 — all-time task history overlay
+  function openTaskHistory() {
+    renderTaskHistoryList();
+    $('taskHistoryOverlay').classList.add('show');
+  }
+  function renderTaskHistoryList() {
+    const list = $('taskHistoryList');
+    if (!list) return;
+    // All-time: walk every date in state.history
+    const allKeys = Object.keys(state.history || {});
+    const tasks = tasksFromHistory(allKeys);
+    const q = ($('taskHistorySearch').value || '').trim().toLowerCase();
+    const sortBy = $('taskHistorySort').value || 'recent';
+    let filtered = q
+      ? tasks.filter(t => t.text.toLowerCase().includes(q))
+      : tasks.slice();
+    if (sortBy === 'blocks') filtered.sort((a,b) => b.blocks - a.blocks);
+    else if (sortBy === 'time') filtered.sort((a,b) => b.totalMin - a.totalMin);
+    else if (sortBy === 'name') filtered.sort((a,b) => a.text.toLowerCase().localeCompare(b.text.toLowerCase()));
+    else filtered.sort((a,b) => b.lastTs - a.lastTs);
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<div class="settle-empty">${q ? 'No tasks match.' : "You haven't logged any named tasks yet. Set a 'one thing' and run a focus block."}</div>`;
+      return;
+    }
+    list.innerHTML = '<ul class="task-list task-list-full">' + filtered.map(t => {
+      const hrs = t.totalMin >= 60 ? (Math.round(t.totalMin / 60 * 10) / 10) + 'h' : t.totalMin + 'm';
+      const last = new Date(t.lastTs);
+      const lastStr = last.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const typeTag = t.types.includes('side') && !t.types.includes('need') ? '<span class="task-tag tag-side">side</span>'
+        : t.types.includes('need') && !t.types.includes('side') ? '<span class="task-tag tag-need">need</span>'
+        : t.types.length ? '<span class="task-tag tag-mixed">mixed</span>' : '';
+      return `<li class="task-row">
+        <div class="task-main">
+          <span class="task-text">${escapeHtml(t.text)}</span>
+          ${typeTag}
+          <button class="task-resume" data-task="${escapeHtml(t.text)}" title="Resume as current task">Resume</button>
+        </div>
+        <div class="task-stats">
+          <b>${t.blocks}</b> block${t.blocks === 1 ? '' : 's'}
+          · ${hrs}
+          ${t.days > 1 ? `· ${t.days} day${t.days === 1 ? '' : 's'}` : ''}
+          <span class="task-last">last: ${lastStr}</span>
+        </div>
+      </li>`;
+    }).join('') + '</ul>';
+    list.querySelectorAll('.task-resume').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.task;
+        $('taskInput').value = name;
+        state.task = name;
+        save();
+        syncTaskEmpty();
+        renderRecentTasks();
+        $('taskHistoryOverlay').classList.remove('show');
+        $('taskInput').focus();
+      });
+    });
+  }
+  if ($('taskHistorySearch')) $('taskHistorySearch').addEventListener('input', renderTaskHistoryList);
+  if ($('taskHistorySort')) $('taskHistorySort').addEventListener('change', renderTaskHistoryList);
+  document.querySelectorAll('[data-close="taskHistory"]').forEach(el => {
+    el.addEventListener('click', () => $('taskHistoryOverlay').classList.remove('show'));
+  });
 
   document.querySelectorAll('#durationPills button').forEach(b => {
     b.classList.toggle('active', Number(b.dataset.min) === state.duration);
@@ -4752,6 +4865,7 @@
       else if ($('settingsOverlay').classList.contains('show')) closeSettings();
       else if ($('weekOverlay').classList.contains('show')) $('weekOverlay').classList.remove('show');
       else if ($('settleOverlay').classList.contains('show')) $('settleOverlay').classList.remove('show');
+      else if ($('taskHistoryOverlay') && $('taskHistoryOverlay').classList.contains('show')) $('taskHistoryOverlay').classList.remove('show');
     }
     if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT'
         && !anyOverlayOpen()) {
