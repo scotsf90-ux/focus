@@ -554,6 +554,36 @@
     outline: none;
   }
   #parkInput:focus { border-color: #3a4150; }
+  /* iter 79 — quick-capture flash so user knows the shortcut worked */
+  /* iter 80 — input row holds parkInput + park-kind toggle */
+  .park-input-row { display: flex; gap: 6px; align-items: stretch; }
+  .park-input-row #parkInput { flex: 1; }
+  .park-kind-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 10px;
+    padding: 0 12px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .park-kind-btn:hover { color: var(--accent-2); border-color: rgba(116,224,164,0.4); }
+  .park-kind-btn.active {
+    color: var(--accent-2);
+    background: rgba(116,224,164,0.12);
+    border-color: rgba(116,224,164,0.45);
+  }
+  #parkInput.quick-capture-flash {
+    animation: quickCaptureFlash 0.6s ease-out;
+  }
+  @keyframes quickCaptureFlash {
+    0%   { box-shadow: 0 0 0 4px rgba(116,224,164,0); border-color: var(--accent-2); }
+    25%  { box-shadow: 0 0 0 4px rgba(116,224,164,0.25); border-color: var(--accent-2); }
+    100% { box-shadow: 0 0 0 4px rgba(116,224,164,0); border-color: #3a4150; }
+  }
+  @media (prefers-reduced-motion: reduce) { #parkInput.quick-capture-flash { animation: none; } }
   ul.park-list {
     list-style: none;
     padding: 0;
@@ -577,6 +607,15 @@
   ul.park-list li:hover { border-color: rgba(116,224,164,0.35); }
   ul.park-list li.shape-action { border-left: 3px solid var(--accent); }
   ul.park-list li.shape-question { border-left: 3px solid var(--accent-2); }
+  /* iter 80: side-quest kind beats shape — green border + accented bg */
+  ul.park-list li.kind-side {
+    border-left: 3px solid var(--accent-2);
+    background: rgba(116,224,164,0.04);
+  }
+  ul.park-list .park-shape.kind-side {
+    background: rgba(116,224,164,0.15);
+    color: var(--accent-2);
+  }
   ul.park-list .park-shape {
     flex-shrink: 0;
     width: 18px; height: 18px;
@@ -654,6 +693,14 @@
     transition: background .12s;
   }
   .park-cluster-tease .ct-action:hover { background: rgba(116,224,164,0.15); }
+  /* iter 81: promote-cluster button distinguished from the settle button */
+  .park-cluster-tease .ct-action.ct-promote {
+    color: var(--accent);
+    border-color: rgba(255,184,77,0.4);
+  }
+  .park-cluster-tease .ct-action.ct-promote:hover {
+    background: rgba(255,184,77,0.12);
+  }
 
   /* iter 78: park stats footer */
   .park-stats {
@@ -667,7 +714,10 @@
   }
   .park-stats b { color: var(--text); font-weight: 600; }
   .park-stats .dot { opacity: 0.4; }
-  .park-stats .period { margin-left: auto; font-style: italic; }
+  .park-stats .period { font-style: italic; }
+  /* iter 82: time-of-day pattern */
+  .park-stats .pattern { color: var(--muted); margin-left: auto; }
+  .park-stats .pattern b { color: var(--accent-2); }
   @keyframes parkSlideIn {
     from { opacity: 0; transform: translateY(-4px); max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; }
     to   { opacity: 1; transform: translateY(0); max-height: 60px; padding-top: 8px; padding-bottom: 8px; margin-top: 0; }
@@ -1919,7 +1969,11 @@
       <h3 class="panel-title">
         Brain dump <span class="hint">parking lot for thoughts that aren't this task</span>
       </h3>
-      <input id="parkInput" placeholder="Type a stray thought, hit Enter, get back to work" />
+      <div class="park-input-row">
+        <input id="parkInput" placeholder="Type a stray thought, hit Enter, get back to work" />
+        <!-- iter 80: pre-tag the next dump as a Side quest (visible only when discipline is on) -->
+        <button id="parkKindBtn" class="park-kind-btn" type="button" title="Park as side quest (Shift+Enter)" hidden>🌿 side</button>
+      </div>
       <!-- iter 78: inline cluster pill — surfaces ML clusters where the dumps live -->
       <div id="parkClusterTease" class="park-cluster-tease" hidden></div>
       <ul id="parkList" class="park-list"></ul>
@@ -1967,8 +2021,7 @@
   </div>
 
   <p class="footer-tip">
-    Shortcuts — <kbd>Space</kbd> start/pause · <kbd>Enter</kbd> in brain dump · <kbd>Esc</kbd> close modal.
-    State saves automatically.
+    Shortcuts — <kbd>Space</kbd> start/pause · <kbd>/</kbd> quick capture · <kbd>Enter</kbd> in brain dump · <kbd>Esc</kbd> close modal. State saves automatically.
   </p>
 </div>
 
@@ -2376,6 +2429,8 @@
   state.taskMeta ??= {};
   // iter 78: brain-dump throughput counters — rolling weekly tallies, reset on rollover
   state.parkStats ??= { addedTs: [], settledTs: [], promotedTs: [] };
+  // iter 80: next-dump pre-tag — 'note' (default) or 'side' (when discipline is on and user toggled)
+  state.parkKind ??= 'note';
   state.duration ??= 25;
   state.parkList ??= [];
   // Migrate string[] → {text, ts, embedding}[] (iter 56). Backward-compat.
@@ -4615,6 +4670,24 @@
     if (typeof renderRecentTasks === 'function') renderRecentTasks();
   });
 
+  // iter 80: refresh the side-quest pre-tag button visibility + active state
+  function refreshParkKind() {
+    const btn = $('parkKindBtn');
+    if (!btn) return;
+    const showBtn = !!(state.needsDiscipline && state.needsDiscipline.enabled);
+    btn.hidden = !showBtn;
+    btn.classList.toggle('active', state.parkKind === 'side');
+  }
+  if ($('parkKindBtn')) {
+    $('parkKindBtn').addEventListener('click', () => {
+      state.parkKind = state.parkKind === 'side' ? 'note' : 'side';
+      save();
+      refreshParkKind();
+      $('parkInput').focus();
+    });
+  }
+  refreshParkKind();
+
   // iter 75/77: recent tasks picker (when empty) OR mark-complete affordance (when has content)
   function renderRecentTasks() {
     const wrap = $('recentTasksRow');
@@ -4809,6 +4882,8 @@
     pill.hidden = !enabled;
     // iter 66: category row only when discipline is on AND a Need is selected
     if (catRow) catRow.hidden = !enabled || state.taskType !== 'need';
+    // iter 80: park-kind toggle visibility follows discipline state
+    if (typeof refreshParkKind === 'function') refreshParkKind();
     if (catRow && !catRow.hidden) {
       catRow.querySelectorAll('button[data-cat]').forEach(b => {
         b.classList.toggle('active', b.dataset.cat === state.taskCategory);
@@ -4931,19 +5006,53 @@
     const top = groups[0];
     const more = groups.length > 1 ? ` <span class="ct-more">+${groups.length - 1} more</span>` : '';
     wrap.hidden = false;
+    // iter 81: stash the cluster items on the wrap for the bulk-promote handler
+    wrap._clusterItems = top.items.slice();
+    wrap._clusterLabel = top.label;
+    const promoteBtn = `<button class="ct-action ct-promote" id="parkClusterPromote" title="Make this cluster the One Thing">→ task</button>`;
     wrap.innerHTML = `
       <span class="ct-glyph">🌿</span>
       <span class="ct-label">forming:</span>
       <b class="ct-name">${escapeHtml(top.label)}</b>
       <span class="ct-count">${top.items.length}</span>
       ${more}
+      ${promoteBtn}
       <button class="ct-action" id="parkClusterOpen">settle ›</button>
     `;
-    const btn = $('parkClusterOpen');
-    if (btn) btn.onclick = () => { if (typeof openSettle === 'function') openSettle(); };
+    const openBtn = $('parkClusterOpen');
+    if (openBtn) openBtn.onclick = () => { if (typeof openSettle === 'function') openSettle(); };
+    const pBtn = $('parkClusterPromote');
+    if (pBtn) pBtn.onclick = () => _promoteClusterToTask(wrap._clusterItems, wrap._clusterLabel);
+  }
+  // iter 81: turn a cluster of dumps into a single task. Each dump moves out of the parking lot
+  // and becomes part of the new task's description-by-name. The cluster label becomes the task title.
+  function _promoteClusterToTask(items, label) {
+    if (!items || items.length === 0) return;
+    const texts = items.map(_dumpText);
+    // Remove the dumps from the parking lot
+    state.parkList = (state.parkList || []).filter(d => !texts.includes(_dumpText(d)));
+    // Task name: cluster label, capitalized
+    const taskName = String(label || 'cluster').replace(/^./, c => c.toUpperCase());
+    state.task = taskName;
+    if ($('taskInput')) $('taskInput').value = taskName;
+    if (state.needsDiscipline && state.needsDiscipline.enabled) state.taskType = 'need';
+    // Counter: count each dump as a promotion
+    state.parkStats = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
+    for (let i = 0; i < texts.length; i++) state.parkStats.promotedTs.push(Date.now());
+    save();
+    if (typeof syncTaskEmpty === 'function') syncTaskEmpty();
+    if (typeof renderSideQuest === 'function') renderSideQuest();
+    if (typeof renderRecentTasks === 'function') renderRecentTasks();
+    renderPark();
+    const banner = $('doneBanner');
+    if (banner) {
+      banner.textContent = `→ ${taskName} (from ${texts.length} parked thoughts)`;
+      banner.classList.add('show');
+      setTimeout(() => banner.classList.remove('show'), 4000);
+    }
   }
 
-  // iter 78: stats footer — N parked this week · M settled · K promoted to tasks
+  // iter 78/82: stats footer — N parked this week · M settled · K → tasks, + time-of-day pattern
   function renderParkStats() {
     const el = $('parkStats');
     if (!el) return;
@@ -4958,6 +5067,22 @@
       return;
     }
     el.hidden = false;
+    // iter 82: time-of-day pattern — most common hour across the rolling week, if signal is strong
+    let pattern = '';
+    if (added >= 5) {
+      const hours = new Array(24).fill(0);
+      ps.addedTs.forEach(t => { const h = new Date(t).getHours(); hours[h] += 1; });
+      // Find the hour with the most dumps; require ≥30% concentration and ≥2 distinct hours overall
+      let topHour = 0, topCount = 0, distinctHours = 0;
+      for (let h = 0; h < 24; h++) {
+        if (hours[h] > 0) distinctHours++;
+        if (hours[h] > topCount) { topCount = hours[h]; topHour = h; }
+      }
+      if (distinctHours >= 2 && (topCount / added) >= 0.30) {
+        const ampm = topHour === 0 ? '12am' : topHour < 12 ? `${topHour}am` : topHour === 12 ? '12pm' : `${topHour-12}pm`;
+        pattern = ` <span class="pattern">·  mostly around <b>${ampm}</b></span>`;
+      }
+    }
     el.innerHTML = `
       <span><b>${added}</b> parked</span>
       <span class="dot">·</span>
@@ -4965,6 +5090,7 @@
       <span class="dot">·</span>
       <span><b>${promoted}</b> → tasks</span>
       <span class="period">this week</span>
+      ${pattern}
     `;
   }
 
@@ -4976,15 +5102,19 @@
       const li = document.createElement('li');
       if (animateFirst && idx === 0) li.classList.add('entering');
       const text = _dumpText(item);
+      const kind = (typeof item === 'object' && item && item.kind) || 'note';
+      if (kind === 'side') li.classList.add('kind-side');
       // iter 78: shape tag — surface the keyword detection inline (small, low-noise)
       const shape = detectAction(text) ? 'action' : (detectQuestion(text) ? 'question' : '');
-      if (shape) li.classList.add('shape-' + shape);
-      const shapeIcon = shape === 'action' ? '⚡' : shape === 'question' ? '?' : '';
+      // Side-kind beats shape for border color
+      if (shape && kind !== 'side') li.classList.add('shape-' + shape);
+      const shapeIcon = kind === 'side' ? '🌿' : (shape === 'action' ? '⚡' : shape === 'question' ? '?' : '');
       if (shapeIcon) {
         const s = document.createElement('span');
         s.className = 'park-shape';
+        if (kind === 'side') s.classList.add('kind-side');
         s.textContent = shapeIcon;
-        s.title = shape === 'action' ? 'Looks like a to-do' : 'Looks like a question';
+        s.title = kind === 'side' ? 'Parked as a Side quest' : (shape === 'action' ? 'Looks like a to-do' : 'Looks like a question');
         li.appendChild(s);
       }
       const span = document.createElement('span');
@@ -5045,7 +5175,11 @@
   }
   $('parkInput').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.value.trim()) {
+      // iter 80: Shift+Enter forces side-quest tag even if pre-tag is off
+      const asSide = e.shiftKey
+        || (state.parkKind === 'side' && state.needsDiscipline && state.needsDiscipline.enabled);
       const dump = { text: e.target.value.trim(), ts: Date.now(), embedding: null };
+      if (asSide) dump.kind = 'side';
       state.parkList.unshift(dump);
       // iter 78: bump throughput counter
       state.parkStats = state.parkStats || { addedTs: [], settledTs: [], promotedTs: [] };
@@ -5211,9 +5345,26 @@
       else if ($('taskHistoryOverlay') && $('taskHistoryOverlay').classList.contains('show')) $('taskHistoryOverlay').classList.remove('show');
     }
     if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT'
+        && document.activeElement.tagName !== 'TEXTAREA'
         && !anyOverlayOpen()) {
       e.preventDefault();
       endsAt ? pause() : start();
+    }
+    // iter 79: quick-capture — '/' when not in an input, or Cmd/Ctrl+Shift+P from anywhere,
+    // focuses the brain-dump input so a stray thought can be parked without losing flow
+    const inField = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
+    const isQuickCapture = (e.key === '/' && !inField && !anyOverlayOpen())
+                        || ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'P' || e.key === 'p'));
+    if (isQuickCapture) {
+      const pi = $('parkInput');
+      if (pi) {
+        e.preventDefault();
+        pi.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        pi.focus();
+        // brief flash to confirm focus landed
+        pi.classList.add('quick-capture-flash');
+        setTimeout(() => pi.classList.remove('quick-capture-flash'), 600);
+      }
     }
   });
 
