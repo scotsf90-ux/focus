@@ -211,6 +211,18 @@
     line-height: 1;
   }
   header .stats .weather-chip.fresh .glyph { color: var(--accent-2); }
+  /* iter 74: place name sub-chip alongside temp */
+  header .stats .weather-chip .place {
+    color: var(--text);
+    padding-left: 6px;
+    margin-left: 2px;
+    border-left: 1px solid var(--line);
+    font-size: 12px;
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .icon-btn {
     background: transparent;
     border: 1px solid var(--line);
@@ -2153,7 +2165,7 @@
   state.ambient.layers ??= 'all'; // 'off' | 'sky' | 'weather' | 'all'
   // ambient sound doesn't auto-resume — browsers block autoplay; user must click
   state.ambient.type = 'off';
-  state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null };
+  state.geo ??= { granted: false, lat: null, lng: null, lastFetch: null, error: null, place: null, placeFetchedFor: null };
   state.onboarded ??= false;
   state.theme ??= 'forest'; // 'forest' | 'ocean' | 'sand' | 'plum'
   state.ml ??= { enabled: false, modelReady: false, lastError: null };
@@ -3134,6 +3146,7 @@
         };
         save(); refreshGeoStatus();
         console.log('[geo] fixed at', pos.coords.latitude.toFixed(4), pos.coords.longitude.toFixed(4), 'accuracy ±' + Math.round(pos.coords.accuracy || 0) + 'm');
+        fetchPlaceName(fresh); // iter 74: reverse geocode (forced on user-initiated refresh)
         fetchWeather(true).then(() => renderWeatherStatus());
       },
       err => {
@@ -3177,6 +3190,9 @@
       const ageMin = Math.round((Date.now() - w.fetchedAt) / 60000);
       const ageStr = ageMin < 1 ? 'just now' : ageMin < 60 ? `${ageMin}m ago` : `${Math.round(ageMin / 60)}h ago`;
       parts.push(`<span style="color: var(--muted);">fetched ${ageStr}</span>`);
+    }
+    if (state.geo.place) {
+      parts.push(`<b style="color: var(--text);">${escapeHtml(state.geo.place)}</b>`);
     }
     if (state.geo.lat != null) {
       parts.push(`<span style="color: var(--muted);">${state.geo.lat.toFixed(3)}, ${state.geo.lng.toFixed(3)}</span>`);
@@ -3400,10 +3416,43 @@
       ? Math.round(apiW.temperature) + '°' + (apiW.unit === 'fahrenheit' ? 'F' : 'C')
       : '';
     const overrideMark = state.weatherOverride ? '<span class="override-dot" title="Manual weather override active">●</span>' : '';
-    chip.innerHTML = `<span class="glyph">${bucketGlyph(b, apiW && apiW.isDay)}</span><span>${tempStr}</span>${overrideMark}`;
+    // iter 74: include place name when available
+    const placeStr = (state.geo && state.geo.place) ? `<span class="place">${escapeHtml(state.geo.place)}</span>` : '';
+    chip.innerHTML = `<span class="glyph">${bucketGlyph(b, apiW && apiW.isDay)}</span><span>${tempStr}</span>${placeStr}${overrideMark}`;
     const isFresh = apiW && apiW.fetchedAt && (Date.now() - apiW.fetchedAt) < 60 * 60 * 1000;
     chip.classList.toggle('fresh', !!isFresh);
     chip.hidden = false;
+  }
+
+  // iter 74: reverse geocode lat/lng → place name (BigDataCloud, free, no API key, client-side endpoint)
+  // Cached on state.geo.place; only refetched when coordinates move materially (>0.05° ≈ 5km).
+  async function fetchPlaceName(force = false) {
+    if (!state.geo.granted || state.geo.lat == null || state.geo.lng == null) return;
+    const here = `${state.geo.lat.toFixed(2)},${state.geo.lng.toFixed(2)}`;
+    if (!force && state.geo.place && state.geo.placeFetchedFor === here) return;
+    try {
+      const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${state.geo.lat.toFixed(4)}&longitude=${state.geo.lng.toFixed(4)}&localityLanguage=en`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      // Pick the most user-meaningful name: city || locality || principalSubdivision || countryName
+      const city = (data.city || data.locality || '').trim();
+      const region = (data.principalSubdivisionCode || data.principalSubdivision || '').replace(/^[A-Z]{2}-/, '');
+      let place = '';
+      if (city && region) place = `${city}, ${region}`;
+      else if (city) place = city;
+      else if (data.principalSubdivision) place = data.principalSubdivision;
+      else if (data.countryName) place = data.countryName.replace(' (the)', '');
+      state.geo.place = place || null;
+      state.geo.placeFetchedFor = here;
+      save();
+      console.log('[geo] reverse-geocoded to', state.geo.place);
+      if (typeof renderWeatherChip === 'function') renderWeatherChip();
+      if (typeof renderWeatherStatus === 'function') renderWeatherStatus();
+    } catch (e) {
+      console.warn('[geo] reverse geocode failed:', e && e.message);
+      // non-fatal — chip just shows temp without a place
+    }
   }
 
   // iter 72: effective bucket — user override beats the API
@@ -4641,6 +4690,8 @@
   renderWeatherChip();
   renderWeatherOverlay();
   fetchWeather(false);
+  // iter 74: reverse geocode existing coords on load so the chip shows place name immediately
+  if (state.geo && state.geo.granted) fetchPlaceName(false);
   applyAmbientLayers();
 
   // --- butterflies: drift across during daytime, with slow wing flaps ---
