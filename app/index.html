@@ -378,6 +378,51 @@
     border-color: #3a4150;
   }
 
+  /* iter 75 — recent tasks resume picker */
+  .recent-tasks {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .recent-tasks .recent-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-right: 2px;
+  }
+  .recent-tasks .recent-task {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px 5px 12px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    max-width: 220px;
+    transition: border-color .12s, background .12s;
+  }
+  .recent-tasks .recent-task:hover {
+    border-color: var(--accent-2);
+    background: rgba(116,224,164,0.06);
+  }
+  .recent-tasks .recent-text {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 180px;
+  }
+  .recent-tasks .recent-count {
+    background: rgba(116,224,164,0.15);
+    color: var(--accent-2);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
   /* iter 64 — task type pill row (Need / Side quest) */
   .task-type-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
   .task-type-row .small { color: var(--muted); font-size: 12px; }
@@ -1682,6 +1727,8 @@
   <section class="card focus">
     <h2>The one thing right now</h2>
     <input id="taskInput" placeholder="What are you working on? (just one thing)" autocomplete="off" />
+    <!-- iter 75: recent tasks — picker shown when input is empty, click to resume -->
+    <div id="recentTasksRow" class="recent-tasks" hidden></div>
 
     <!-- iter 64/68: task type — visible only when Side quest discipline is on -->
     <div id="taskTypeRow" class="task-type-row" hidden>
@@ -2347,6 +2394,7 @@
       renderTree();
       applyStreakHalo();
       if (typeof renderSideQuest === 'function') renderSideQuest();
+      if (typeof renderRecentTasks === 'function') renderRecentTasks();
       notify('Focus block done', 'Time to stand up and step outside.');
       openBreak();
     } else {
@@ -4321,6 +4369,7 @@
     renderTree();
     applyStreakHalo();
     if (typeof renderSideQuest === 'function') renderSideQuest();
+    if (typeof renderRecentTasks === 'function') renderRecentTasks();
     const banner = $('doneBanner');
     banner.textContent = '✓ Logged. Take the break — that\'s the deal.';
     banner.classList.add('show');
@@ -4375,7 +4424,47 @@
   $('taskInput').value = state.task;
   const syncTaskEmpty = () => $('taskInput').classList.toggle('is-empty', !$('taskInput').value.trim());
   syncTaskEmpty();
-  $('taskInput').addEventListener('input', e => { state.task = e.target.value; save(); syncTaskEmpty(); });
+  $('taskInput').addEventListener('input', e => {
+    state.task = e.target.value;
+    save();
+    syncTaskEmpty();
+    if (typeof renderRecentTasks === 'function') renderRecentTasks();
+  });
+
+  // iter 75: recent tasks picker — shows when input is empty, click to resume
+  function renderRecentTasks() {
+    const wrap = $('recentTasksRow');
+    if (!wrap) return;
+    const inputVal = ($('taskInput').value || '').trim();
+    // Hide while user is typing — they're starting fresh
+    if (inputVal.length > 0) { wrap.hidden = true; return; }
+    // Look back 30 days for tasks
+    const keys = [];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      keys.push(d.toISOString().slice(0, 10));
+    }
+    const tasks = tasksFromHistory(keys).slice(0, 5); // top 5 most-recent
+    if (tasks.length === 0) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+    wrap.hidden = false;
+    const pills = tasks.map(t => {
+      const blockStr = `${t.blocks} block${t.blocks === 1 ? '' : 's'}`;
+      return `<button class="recent-task" data-task="${escapeHtml(t.text)}" title="${escapeHtml(t.text)} · ${blockStr}"><span class="recent-text">${escapeHtml(t.text)}</span><span class="recent-count">${t.blocks}</span></button>`;
+    }).join('');
+    wrap.innerHTML = `<span class="recent-label">resume:</span>${pills}`;
+    wrap.querySelectorAll('button.recent-task').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.task;
+        $('taskInput').value = name;
+        state.task = name;
+        save();
+        syncTaskEmpty();
+        wrap.hidden = true;
+        $('taskInput').focus();
+      });
+    });
+  }
+  renderRecentTasks();
 
   document.querySelectorAll('#durationPills button').forEach(b => {
     b.classList.toggle('active', Number(b.dataset.min) === state.duration);
