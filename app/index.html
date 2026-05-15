@@ -425,7 +425,7 @@
   }
   /* iter 77 — mark complete action row + sparkles */
   .task-actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
-  .task-complete-btn {
+  .task-complete-btn, .task-notes-btn {
     background: transparent;
     border: 1px dashed var(--line);
     color: var(--muted);
@@ -440,6 +440,47 @@
     color: var(--accent-2);
     border-color: var(--accent-2);
     background: rgba(116,224,164,0.06);
+  }
+  .task-notes-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(255,184,77,0.06);
+  }
+  .task-notes-btn.has-notes {
+    color: var(--accent);
+    border-color: rgba(255,184,77,0.4);
+    border-style: solid;
+  }
+  /* iter 86 — inline notes editor */
+  .task-notes-panel {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(255,184,77,0.04);
+    border: 1px solid rgba(255,184,77,0.18);
+    border-radius: 10px;
+  }
+  #taskNotesInput {
+    width: 100%;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    resize: vertical;
+    min-height: 60px;
+  }
+  #taskNotesInput:focus { border-color: rgba(255,184,77,0.5); }
+  .task-tag.tag-notes { background: rgba(255,184,77,0.18); color: var(--accent); border: 1px solid rgba(255,184,77,0.4); }
+  .task-notes-preview {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+    padding-left: 8px;
+    border-left: 2px solid rgba(255,184,77,0.3);
+    line-height: 1.5;
   }
   .task-tag.tag-done { background: rgba(116,224,164,0.18); color: var(--accent-2); border: 1px solid rgba(116,224,164,0.4); }
   .task-list-full .task-row.is-complete .task-text { text-decoration: line-through; opacity: 0.78; }
@@ -555,6 +596,21 @@
   }
   #parkInput:focus { border-color: #3a4150; }
   /* iter 79 — quick-capture flash so user knows the shortcut worked */
+  /* iter 84 — peak-hour prompt above the input */
+  .park-hour-prompt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: rgba(116,224,164,0.04);
+    border: 1px dashed rgba(116,224,164,0.22);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .park-hour-prompt .phg { font-size: 13px; opacity: 0.85; }
+  .park-hour-prompt .pht { font-style: italic; }
   /* iter 80 — input row holds parkInput + park-kind toggle */
   .park-input-row { display: flex; gap: 6px; align-items: stretch; }
   .park-input-row #parkInput { flex: 1; }
@@ -700,6 +756,14 @@
   }
   .park-cluster-tease .ct-action.ct-promote:hover {
     background: rgba(255,184,77,0.12);
+  }
+  /* iter 83: bulk side-tag cluster button */
+  .park-cluster-tease .ct-action.ct-side-all {
+    color: var(--accent-2);
+    border-color: rgba(116,224,164,0.35);
+  }
+  .park-cluster-tease .ct-action.ct-side-all:hover {
+    background: rgba(116,224,164,0.12);
   }
 
   /* iter 78: park stats footer */
@@ -1923,9 +1987,18 @@
     <input id="taskInput" placeholder="What are you working on? (just one thing)" autocomplete="off" />
     <!-- iter 75: recent tasks — picker shown when input is empty, click to resume -->
     <div id="recentTasksRow" class="recent-tasks" hidden></div>
-    <!-- iter 77: when input has content, offer a mark-complete affordance -->
+    <!-- iter 77/86: when input has content, offer mark-complete + per-task notes -->
     <div id="taskActionsRow" class="task-actions" hidden>
       <button id="markCompleteBtn" class="task-complete-btn" title="Mark this task complete">✓ mark complete</button>
+      <button id="taskNotesBtn" class="task-notes-btn" title="Notes for this task">📝 notes</button>
+    </div>
+    <!-- iter 86: inline notes editor (shown when 📝 notes is clicked) -->
+    <div id="taskNotesPanel" class="task-notes-panel" hidden>
+      <textarea id="taskNotesInput" rows="3" placeholder="Notes on this task — thoughts, blockers, links, anything"></textarea>
+      <div class="row" style="gap: 6px; margin-top: 6px; justify-content: flex-end;">
+        <span class="small" style="margin-right: auto; color: var(--muted);" id="taskNotesMeta"></span>
+        <button id="taskNotesClose" class="ghost" style="font-size: 12px; padding: 4px 10px;">Close</button>
+      </div>
     </div>
 
     <!-- iter 64/68: task type — visible only when Side quest discipline is on -->
@@ -1969,6 +2042,8 @@
       <h3 class="panel-title">
         Brain dump <span class="hint">parking lot for thoughts that aren't this task</span>
       </h3>
+      <!-- iter 84: time-of-day prompt — shows during user's most-common dump hour -->
+      <div id="parkHourPrompt" class="park-hour-prompt" hidden></div>
       <div class="park-input-row">
         <input id="parkInput" placeholder="Type a stray thought, hit Enter, get back to work" />
         <!-- iter 80: pre-tag the next dump as a Side quest (visible only when discipline is on) -->
@@ -2238,6 +2313,8 @@
       Opt-in. Loads a tiny sentence-embedding model into your browser so the <b>Settle your thoughts</b> view can group dumps by meaning, not just shared words. The model runs entirely on-device — nothing about your thoughts is sent anywhere. Model files come from a public CDN once, then cache offline.
     </div>
     <label><input type="checkbox" id="mlEnabled" /> Enable smart clustering</label>
+    <!-- iter 85: opt-in notification when a new cluster forms -->
+    <label style="margin-top: 4px;"><input type="checkbox" id="mlNotifyClusters" /> Notify me when a new cluster forms (needs browser notifications)</label>
     <div class="row" style="margin-top:6px;">
       <span class="small">Status:</span>
       <span id="mlStatus" class="small"><b style="color: var(--muted);">off</b></span>
@@ -2449,6 +2526,9 @@
   state.onboarded ??= false;
   state.theme ??= 'forest'; // 'forest' | 'ocean' | 'sand' | 'plum'
   state.ml ??= { enabled: false, modelReady: false, lastError: null };
+  // iter 85: opt-in cluster-formed notifications (requires browser notifications + smart clustering both on)
+  state.ml.notifyClusters ??= false;
+  state.ml.notifiedClusters ??= {}; // {label: lastNotifyTs}
   state.fileSync ??= { fileName: null, lastSyncedAt: null };
   state.weather ??= { code: null, cloudCover: null, temperature: null, isDay: null, bucket: null, fetchedAt: null, unit: null };
   // iter 72: user can force a weather bucket when the API hasn't caught up to what's outside
@@ -3005,6 +3085,8 @@
     if (typeof notify === 'function') notify('New day', 'Stats reset. Yesterday\'s blocks are saved in the week view.');
   }
   setInterval(checkDateRollover, 60 * 1000);
+  // iter 84: re-check peak-hour prompt every 5 minutes so it appears/disappears with the clock
+  setInterval(() => { if (typeof renderParkHourPrompt === 'function') renderParkHourPrompt(); }, 5 * 60 * 1000);
 
   // --- focus management for accessibility ---
   // observes .show class on every overlay; on open, focus first focusable inside
@@ -4668,6 +4750,9 @@
     save();
     syncTaskEmpty();
     if (typeof renderRecentTasks === 'function') renderRecentTasks();
+    if (typeof refreshTaskNotesBadge === 'function') refreshTaskNotesBadge();
+    // close the notes panel when task changes — notes are scoped to the previous task
+    if ($('taskNotesPanel')) $('taskNotesPanel').hidden = true;
   });
 
   // iter 80: refresh the side-quest pre-tag button visibility + active state
@@ -4771,14 +4856,19 @@
       const typeTag = t.types.includes('side') && !t.types.includes('need') ? '<span class="task-tag tag-side">side</span>'
         : t.types.includes('need') && !t.types.includes('side') ? '<span class="task-tag tag-need">need</span>'
         : t.types.length ? '<span class="task-tag tag-mixed">mixed</span>' : '';
-      // iter 77: completion badge from state.taskMeta
+      // iter 77/86: completion badge + notes preview from state.taskMeta
       const meta = (state.taskMeta || {})[t.text.toLowerCase()];
       const completedBadge = (meta && meta.completedAt) ? '<span class="task-tag tag-done" title="Marked complete">✓ done</span>' : '';
+      const notesText = (meta && meta.notes && meta.notes.trim()) || '';
+      const notesPreview = notesText
+        ? `<div class="task-notes-preview">📝 ${escapeHtml(notesText.length > 140 ? notesText.slice(0, 137) + '…' : notesText)}</div>`
+        : '';
       return `<li class="task-row${meta && meta.completedAt ? ' is-complete' : ''}">
         <div class="task-main">
           <span class="task-text">${escapeHtml(t.text)}</span>
           ${typeTag}
           ${completedBadge}
+          ${notesText ? '<span class="task-tag tag-notes" title="Has notes">📝</span>' : ''}
           <button class="task-resume" data-task="${escapeHtml(t.text)}" title="Resume as current task">Resume</button>
         </div>
         <div class="task-stats">
@@ -4787,6 +4877,7 @@
           ${t.days > 1 ? `· ${t.days} day${t.days === 1 ? '' : 's'}` : ''}
           <span class="task-last">last: ${lastStr}</span>
         </div>
+        ${notesPreview}
       </li>`;
     }).join('') + '</ul>';
     list.querySelectorAll('.task-resume').forEach(btn => {
@@ -4859,6 +4950,64 @@
   if ($('markCompleteBtn')) {
     $('markCompleteBtn').addEventListener('click', markTaskComplete);
   }
+
+  // iter 86: per-task notes — load/save state.taskMeta[lowerName].notes
+  function _currentTaskKey() {
+    const name = (state.task || '').trim();
+    return name ? name.toLowerCase() : null;
+  }
+  function openTaskNotes() {
+    const key = _currentTaskKey();
+    if (!key) return;
+    state.taskMeta = state.taskMeta || {};
+    state.taskMeta[key] = state.taskMeta[key] || {};
+    const meta = state.taskMeta[key];
+    const ta = $('taskNotesInput');
+    const panel = $('taskNotesPanel');
+    const metaEl = $('taskNotesMeta');
+    if (!ta || !panel) return;
+    ta.value = meta.notes || '';
+    panel.hidden = false;
+    if (metaEl) {
+      metaEl.textContent = meta.notesUpdatedAt
+        ? 'saved · ' + new Date(meta.notesUpdatedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        : 'autosaves as you type';
+    }
+    ta.focus();
+  }
+  let _notesSaveTimer = null;
+  function _scheduleNotesSave() {
+    clearTimeout(_notesSaveTimer);
+    _notesSaveTimer = setTimeout(() => {
+      const key = _currentTaskKey();
+      if (!key) return;
+      const ta = $('taskNotesInput');
+      if (!ta) return;
+      state.taskMeta = state.taskMeta || {};
+      state.taskMeta[key] = state.taskMeta[key] || {};
+      state.taskMeta[key].notes = ta.value;
+      state.taskMeta[key].notesUpdatedAt = Date.now();
+      state.taskMeta[key].canonicalName = state.task;
+      save();
+      const metaEl = $('taskNotesMeta');
+      if (metaEl) metaEl.textContent = 'saved · just now';
+      refreshTaskNotesBadge();
+    }, 350);
+  }
+  if ($('taskNotesBtn')) $('taskNotesBtn').addEventListener('click', openTaskNotes);
+  if ($('taskNotesClose')) $('taskNotesClose').addEventListener('click', () => { $('taskNotesPanel').hidden = true; });
+  if ($('taskNotesInput')) $('taskNotesInput').addEventListener('input', _scheduleNotesSave);
+
+  // iter 86: indicate that the current task has notes (small dot near the notes btn)
+  function refreshTaskNotesBadge() {
+    const btn = $('taskNotesBtn');
+    if (!btn) return;
+    const key = _currentTaskKey();
+    const meta = key && state.taskMeta ? state.taskMeta[key] : null;
+    const has = !!(meta && meta.notes && meta.notes.trim());
+    btn.classList.toggle('has-notes', has);
+  }
+  refreshTaskNotesBadge();
 
   document.querySelectorAll('#durationPills button').forEach(b => {
     b.classList.toggle('active', Number(b.dataset.min) === state.duration);
@@ -5010,6 +5159,9 @@
     wrap._clusterItems = top.items.slice();
     wrap._clusterLabel = top.label;
     const promoteBtn = `<button class="ct-action ct-promote" id="parkClusterPromote" title="Make this cluster the One Thing">→ task</button>`;
+    // iter 83: mark all cluster members as side quests in one click (discipline only)
+    const disciplineOn = !!(state.needsDiscipline && state.needsDiscipline.enabled);
+    const sideAllBtn = disciplineOn ? `<button class="ct-action ct-side-all" id="parkClusterSideAll" title="Tag each member as a Side quest">→ all side</button>` : '';
     wrap.innerHTML = `
       <span class="ct-glyph">🌿</span>
       <span class="ct-label">forming:</span>
@@ -5017,12 +5169,36 @@
       <span class="ct-count">${top.items.length}</span>
       ${more}
       ${promoteBtn}
+      ${sideAllBtn}
       <button class="ct-action" id="parkClusterOpen">settle ›</button>
     `;
     const openBtn = $('parkClusterOpen');
     if (openBtn) openBtn.onclick = () => { if (typeof openSettle === 'function') openSettle(); };
     const pBtn = $('parkClusterPromote');
     if (pBtn) pBtn.onclick = () => _promoteClusterToTask(wrap._clusterItems, wrap._clusterLabel);
+    const sBtn = $('parkClusterSideAll');
+    if (sBtn) sBtn.onclick = () => _markClusterAsSide(wrap._clusterItems);
+  }
+  // iter 83: tag every cluster member with kind:'side' so they all read as side quests
+  function _markClusterAsSide(items) {
+    if (!items || items.length === 0) return;
+    const texts = new Set(items.map(_dumpText));
+    let changed = 0;
+    (state.parkList || []).forEach(d => {
+      if (typeof d === 'object' && d && texts.has(_dumpText(d)) && d.kind !== 'side') {
+        d.kind = 'side';
+        changed++;
+      }
+    });
+    if (changed === 0) return;
+    save();
+    renderPark();
+    const banner = $('doneBanner');
+    if (banner) {
+      banner.textContent = `🌿 Tagged ${changed} thought${changed === 1 ? '' : 's'} as side quests.`;
+      banner.classList.add('show');
+      setTimeout(() => banner.classList.remove('show'), 3500);
+    }
   }
   // iter 81: turn a cluster of dumps into a single task. Each dump moves out of the parking lot
   // and becomes part of the new task's description-by-name. The cluster label becomes the task title.
@@ -5092,6 +5268,32 @@
       <span class="period">this week</span>
       ${pattern}
     `;
+  }
+
+  // iter 84: peak-hour prompt — only surfaces during the user's pattern hour, never proactive elsewhere
+  function renderParkHourPrompt() {
+    const el = $('parkHourPrompt');
+    if (!el) return;
+    _trimStats();
+    const ps = state.parkStats || { addedTs: [] };
+    // Need enough signal AND today must not already have a dump in this hour (don't nag if you've already parked)
+    if ((ps.addedTs || []).length < 5) { el.hidden = true; return; }
+    const hours = new Array(24).fill(0);
+    ps.addedTs.forEach(t => { hours[new Date(t).getHours()] += 1; });
+    let topHour = 0, topCount = 0, distinctHours = 0;
+    for (let h = 0; h < 24; h++) {
+      if (hours[h] > 0) distinctHours++;
+      if (hours[h] > topCount) { topCount = hours[h]; topHour = h; }
+    }
+    if (distinctHours < 2 || (topCount / ps.addedTs.length) < 0.30) { el.hidden = true; return; }
+    const nowHour = new Date().getHours();
+    if (nowHour !== topHour) { el.hidden = true; return; }
+    // Suppress if user has already parked something this hour
+    const hourStart = new Date(); hourStart.setMinutes(0, 0, 0);
+    const parkedThisHour = ps.addedTs.some(t => t >= hourStart.getTime());
+    if (parkedThisHour) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `<span class="phg">🌿</span> <span class="pht">Your usual dump hour — anything floating?</span>`;
   }
 
   // brain dump
@@ -5166,9 +5368,10 @@
     // empty state visibility
     const empty = $('parkEmpty');
     if (empty) empty.classList.toggle('hidden', state.parkList.length > 0);
-    // iter 78: cluster tease + stats
+    // iter 78/84: cluster tease + stats + peak-hour prompt
     renderParkClusterTease();
     renderParkStats();
+    renderParkHourPrompt();
     // brain dumps drop leaves at the tree's base — re-render
     if (typeof renderTree === 'function') renderTree();
     if (typeof refreshSettleButton === 'function') refreshSettleButton();
@@ -5196,6 +5399,8 @@
               state.parkList[idx2].embedding = v;
               save();
               renderPark();
+              // iter 85: re-check clusters after a new embedding lands
+              if (typeof maybeNotifyNewClusters === 'function') maybeNotifyNewClusters();
             }
           })
           .catch(err => console.warn('[ML] embed failed:', err && err.message));
@@ -5308,6 +5513,49 @@
       } catch (_) { /* status already shown */ }
     });
   })();
+
+  // iter 85: cluster-formed notification toggle
+  (function wireClusterNotify() {
+    const cb = $('mlNotifyClusters');
+    if (!cb) return;
+    cb.checked = !!(state.ml && state.ml.notifyClusters);
+    cb.addEventListener('change', () => {
+      state.ml.notifyClusters = !!cb.checked;
+      save();
+      if (cb.checked && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    });
+  })();
+  // iter 85: detect newly-formed clusters and fire a notification once per cluster per 24h
+  function maybeNotifyNewClusters() {
+    if (!state.ml || !state.ml.notifyClusters || !state.ml.enabled) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const embedded = (state.parkList || []).filter(d => Array.isArray(_dumpEmbedding(d)) && _dumpEmbedding(d).length);
+    if (embedded.length < 3) return;
+    let clusters;
+    try { clusters = clusterByEmbedding(embedded, 0.5); } catch (_) { return; }
+    const big = (clusters || []).filter(c => c.items.length >= 3);
+    if (!big.length) return;
+    const now = Date.now();
+    state.ml.notifiedClusters = state.ml.notifiedClusters || {};
+    let fired = false;
+    for (const c of big) {
+      const key = String(c.label || '').toLowerCase();
+      const last = state.ml.notifiedClusters[key] || 0;
+      if (now - last < 24 * 3600 * 1000) continue;
+      try {
+        new Notification('Vesper · cluster forming', {
+          body: `"${c.label}" — ${c.items.length} thoughts`,
+          tag: 'vesper-cluster-' + key,
+          silent: true
+        });
+        state.ml.notifiedClusters[key] = now;
+        fired = true;
+      } catch (_) {}
+    }
+    if (fired) save();
+  }
 
   // iter 64: side quest discipline settings wiring
   (function wireSideQuestSettings() {
