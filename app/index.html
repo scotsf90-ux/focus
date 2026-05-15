@@ -1240,7 +1240,8 @@
   .cat-seg.cat-chores { background: #c9a07a; }
   .cat-seg.cat-health { background: #74e0a4; }
   .cat-seg.cat-eat { background: #f08a78; }
-  .cat-seg.cat-other { background: #8a93a6; }
+  .cat-seg.cat-care { background: #b48cf0; }
+  .cat-seg.cat-other { background: #8a93a6; }  /* legacy bucket for pre-iter-87 'other' blocks */
   .cat-missing { font-size: 12px; color: var(--muted); margin-top: 8px; font-style: italic; }
   /* iter 73 — task history in week view */
   .week-tasks { margin-top: 18px; }
@@ -1299,6 +1300,7 @@
   .task-cat-inline button.active[data-cat="chores"] { background: rgba(201,160,122,0.15); color: #c9a07a; border-color: rgba(201,160,122,0.45); }
   .task-cat-inline button.active[data-cat="health"] { background: rgba(116,224,164,0.15); color: var(--accent-2); border-color: rgba(116,224,164,0.45); }
   .task-cat-inline button.active[data-cat="eat"]    { background: rgba(240,138,120,0.15); color: #f08a78; border-color: rgba(240,138,120,0.45); }
+  .task-cat-inline button.active[data-cat="care"]   { background: rgba(180,140,240,0.15); color: #b48cf0; border-color: rgba(180,140,240,0.45); }
   .task-cat-inline button.active[data-cat="other"]  { background: rgba(138,147,166,0.15); color: var(--muted); border-color: rgba(138,147,166,0.45); }
   .week-summary { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 14px; flex-wrap: wrap; }
   .week-summary b { color: var(--text); font-weight: 700; }
@@ -2012,7 +2014,7 @@
         <button data-cat="chores">chores</button>
         <button data-cat="health">health</button>
         <button data-cat="eat">eat</button>
-        <button data-cat="other">other</button>
+        <button data-cat="care" title="help someone you care about">care</button>
       </div>
     </div>
 
@@ -2501,7 +2503,7 @@
   // user can see their own pattern. Default off so existing users get no change.
   state.needsDiscipline ??= { enabled: false, ratio: 2 };
   state.taskType ??= 'need'; // 'need' | 'side'
-  state.taskCategory ??= null; // 'work' | 'chores' | 'health' | 'eat' | 'other' | null
+  state.taskCategory ??= null; // 'work' | 'chores' | 'health' | 'eat' | 'care' | (legacy 'other')
   // iter 77: per-task metadata keyed by lowercase name — {completedAt}
   state.taskMeta ??= {};
   // iter 78: brain-dump throughput counters — rolling weekly tallies, reset on rollover
@@ -4583,7 +4585,7 @@
     $('weekSummary').innerHTML = summary;
 
     // iter 66: need-category breakdown when any block in the week has a category
-    const catCounts = { work: 0, chores: 0, health: 0, eat: 0, other: 0 };
+    const catCounts = { work: 0, chores: 0, health: 0, eat: 0, care: 0, other: 0 };
     days.forEach(d => {
       const h = state.history[d.key];
       if (!h || !Array.isArray(h.blocks)) return;
@@ -4635,13 +4637,13 @@
         catWrap.innerHTML = '';
       } else {
         catWrap.hidden = false;
-        const segs = ['work','chores','health','eat','other'].map(k => {
+        const segs = ['work','chores','health','eat','care','other'].map(k => {
           const n = catCounts[k];
           if (n === 0) return null;
           const pct = (n / catTotal) * 100;
           return `<div class="cat-seg cat-${k}" style="width:${pct.toFixed(2)}%" title="${k}: ${n} block${n === 1 ? '' : 's'} (${pct.toFixed(0)}%)"><span class="cat-label">${k}</span><b>${n}</b></div>`;
         }).filter(Boolean);
-        const missing = ['work','chores','health','eat'].filter(k => catCounts[k] === 0);
+        const missing = ['work','chores','health','eat','care'].filter(k => catCounts[k] === 0);
         const missingNote = missing.length
           ? `<div class="cat-missing">Light on: ${missing.join(', ')}</div>`
           : '';
