@@ -1330,6 +1330,31 @@
   /* iter 68 — categories inline next to the type pills, separator dot */
   .task-cat-inline { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
   .task-cat-inline .cat-sep { color: var(--muted); margin: 0 2px; opacity: 0.5; }
+  /* iter 89 — radio-style cue: active pill grows slightly + bears a leading dot, hint suffix */
+  .task-cat-inline button[role="radio"] {
+    position: relative;
+    transition: transform .12s, padding .12s;
+  }
+  .task-cat-inline button[role="radio"].active {
+    transform: scale(1.04);
+    padding-left: 16px;
+  }
+  .task-cat-inline button[role="radio"].active::before {
+    content: '';
+    position: absolute;
+    left: 7px; top: 50%;
+    width: 5px; height: 5px;
+    margin-top: -2.5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .task-cat-inline .cat-hint {
+    color: var(--muted);
+    font-size: 10px;
+    font-style: italic;
+    opacity: 0.55;
+    margin-left: 4px;
+  }
   /* On narrow screens, flow categories onto their own line below the type pills so the · separator doesn't end up orphaned */
   @media (max-width: 600px) {
     .task-cat-inline { display: flex; width: 100%; margin-top: 6px; gap: 4px; }
@@ -2047,14 +2072,15 @@
     <div id="taskTypeRow" class="task-type-row" hidden>
       <button data-type="need" class="active">Need</button>
       <button data-type="side">Side quest</button>
-      <!-- iter 66/68: inline categories appear right next to the type pills when Need is selected -->
-      <div id="taskCatRow" class="task-cat-inline" hidden>
-        <span class="cat-sep">·</span>
-        <button data-cat="work">work</button>
-        <button data-cat="chores">chores</button>
-        <button data-cat="health">health</button>
-        <button data-cat="eat">eat</button>
-        <button data-cat="care" title="help someone you care about">care</button>
+      <!-- iter 66/68/89: inline categories — single-select radio-style group, visible when Need is selected -->
+      <div id="taskCatRow" class="task-cat-inline" role="radiogroup" aria-label="Need category (pick one)" hidden>
+        <span class="cat-sep" aria-hidden="true">·</span>
+        <button data-cat="work" role="radio" aria-checked="false">work</button>
+        <button data-cat="chores" role="radio" aria-checked="false">chores</button>
+        <button data-cat="health" role="radio" aria-checked="false">health</button>
+        <button data-cat="eat" role="radio" aria-checked="false">eat</button>
+        <button data-cat="care" role="radio" aria-checked="false" title="help someone you care about">care</button>
+        <span class="cat-hint" aria-hidden="true">pick one</span>
       </div>
     </div>
 
@@ -5323,7 +5349,9 @@
     if (typeof refreshParkKind === 'function') refreshParkKind();
     if (catRow && !catRow.hidden) {
       catRow.querySelectorAll('button[data-cat]').forEach(b => {
-        b.classList.toggle('active', b.dataset.cat === state.taskCategory);
+        const on = b.dataset.cat === state.taskCategory;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
       });
     }
     if (!enabled) return;
